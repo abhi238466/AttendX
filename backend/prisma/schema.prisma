@@ -1,0 +1,139 @@
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum TeacherStatus {
+  PENDING
+  ACTIVE
+  REJECTED
+  SUSPENDED
+  DEACTIVATED
+}
+
+enum AttendanceSessionStatus {
+  ACTIVE
+  CLOSED
+  CANCELLED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  REJECTED
+}
+
+enum AuditActorType {
+  ADMIN
+  TEACHER
+  SYSTEM
+}
+
+model Admin {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique @db.VarChar(254)
+  passwordHash String   @db.VarChar(255)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  reviewedTeachers Teacher[] @relation("TeacherReviewer")
+}
+
+model Teacher {
+  id                String        @id @default(uuid()) @db.Uuid
+  fullName          String        @db.VarChar(120)
+  email             String        @unique @db.VarChar(254)
+  passwordHash      String        @db.VarChar(255)
+  status            TeacherStatus @default(PENDING)
+  rejectionReason   String?       @db.VarChar(1000)
+  reviewedAt        DateTime?
+  reviewedByAdminId String?       @db.Uuid
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  reviewer           Admin?             @relation("TeacherReviewer", fields: [reviewedByAdminId], references: [id], onDelete: Restrict)
+  attendanceSessions AttendanceSession[]
+  correctedRecords  AttendanceRecord[]  @relation("AttendanceCorrection")
+
+  @@index([status, createdAt])
+}
+
+model AttendanceSession {
+  id           String                  @id @default(uuid()) @db.Uuid
+  teacherId    String                  @db.Uuid
+  courseName   String                  @db.VarChar(150)
+  sections     String[]
+  latitude     Float
+  longitude    Float
+  radiusMeters Int
+  status       AttendanceSessionStatus @default(ACTIVE)
+  startsAt     DateTime                @default(now())
+  endsAt       DateTime?
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+
+  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+
+  records  AttendanceRecord[]
+  qrTokens QrCodeToken[]
+
+  @@index([teacherId, status])
+  @@index([createdAt])
+}
+
+model QrCodeToken {
+  id                  String   @id @default(uuid()) @db.Uuid
+  attendanceSessionId String   @db.Uuid
+  tokenHash           String   @unique @db.VarChar(128)
+  expiresAt           DateTime
+  createdAt            DateTime @default(now())
+
+  attendanceSession AttendanceSession @relation(fields: [attendanceSessionId], references: [id], onDelete: Cascade)
+
+  @@index([attendanceSessionId, expiresAt])
+}
+
+model AttendanceRecord {
+  id                             String           @id @default(uuid()) @db.Uuid
+  attendanceSessionId            String           @db.Uuid
+  fullName                       String           @db.VarChar(120)
+  classRollNumber                String           @db.VarChar(50)
+  universityRollNumber           String           @db.VarChar(80)
+  normalizedUniversityRollNumber String           @db.VarChar(80)
+  section                        String           @db.VarChar(50)
+  latitude                       Float?
+  longitude                      Float?
+  locationAccuracyMeters         Float?
+  distanceMeters                 Float?
+  status                         AttendanceStatus @default(PRESENT)
+  riskFlags                      String[]         @default([])
+  correctionReason               String?          @db.VarChar(1000)
+  correctedByTeacherId           String?          @db.Uuid
+  correctedAt                    DateTime?
+  submittedAt                    DateTime         @default(now())
+  updatedAt                      DateTime         @updatedAt
+
+  attendanceSession AttendanceSession @relation(fields: [attendanceSessionId], references: [id], onDelete: Restrict)
+  correctedBy       Teacher?          @relation("AttendanceCorrection", fields: [correctedByTeacherId], references: [id], onDelete: Restrict)
+
+  @@unique([attendanceSessionId, normalizedUniversityRollNumber])
+  @@index([attendanceSessionId, status])
+  @@index([universityRollNumber])
+}
+
+model AuditLog {
+  id         String         @id @default(uuid()) @db.Uuid
+  actorType  AuditActorType
+  actorId    String?        @db.Uuid
+  action     String         @db.VarChar(100)
+  entityType String         @db.VarChar(100)
+  entityId   String?        @db.Uuid
+  metadata   Json?
+  createdAt  DateTime       @default(now())
+
+  @@index([actorType, actorId, createdAt])
+  @@index([entityType, entityId])
+}
