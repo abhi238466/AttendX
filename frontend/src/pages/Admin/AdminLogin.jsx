@@ -85,6 +85,7 @@ function AdminLogin() {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [otp, setOtp] = useState('')
+  const [otpPurpose, setOtpPurpose] = useState('reset')
   const [resetToken, setResetToken] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
@@ -149,6 +150,7 @@ function AdminLogin() {
     }
   }
 
+ 
   async function handleRegister(event) {
     event.preventDefault()
 
@@ -175,22 +177,27 @@ function AdminLogin() {
     setIsSubmitting(true)
 
     try {
-      await postJson('/api/auth/admin/register', {
+      const result = await postJson('/api/auth/admin/register', {
         name: name.trim(),
         email: email.trim().toLowerCase(),
         password,
       })
 
-      setPassword('')
-      setConfirmPassword('')
-      setView('login')
-      notify('success', 'Admin account created. You can now sign in.')
+    setOtp('')
+setOtpPurpose('registration')
+setView('verify')
+
+      notify(
+        'success',
+        result.message || 'If email delivery is available, a verification code has been sent.'
+      )
     } catch (error) {
-      notify('error', error.message || 'Account creation failed.')
+      notify('error', error.message || 'Could not start Admin registration.')
     } finally {
       setIsSubmitting(false)
     }
   }
+
 
   async function handleForgot(event) {
     event.preventDefault()
@@ -208,6 +215,7 @@ function AdminLogin() {
       })
 
       setView('verify')
+      setOtpPurpose('reset')
       notify(
         'success',
         result.message ||
@@ -220,21 +228,44 @@ function AdminLogin() {
     }
   }
 
-  async function handleVerifyOtp(event) {
-    event.preventDefault()
 
-    if (!/^\d{6}$/.test(otp.trim())) {
-      notify('error', 'Enter the 6-digit verification code.')
-      return
-    }
+async function handleVerifyOtp(event) {
+  event.preventDefault()
 
-    setIsSubmitting(true)
+  if (!/^\d{6}$/.test(otp.trim())) {
+    notify('error', 'Enter the 6-digit verification code.')
+    return
+  }
 
-    try {
-      const result = await postJson('/api/auth/admin/verify-reset-otp', {
-        email: email.trim().toLowerCase(),
-        otp: otp.trim(),
-      })
+  setIsSubmitting(true)
+
+  try {
+    if (otpPurpose === 'registration') {
+      const result = await postJson(
+        '/api/auth/admin/verify-registration-otp',
+        {
+          email: email.trim().toLowerCase(),
+          otp: otp.trim(),
+        }
+      )
+
+      setPassword('')
+      setConfirmPassword('')
+      setOtp('')
+      setView('login')
+
+      notify(
+        'success',
+        result.message || 'Email verified. Admin account created. You can now sign in.'
+      )
+    } else {
+      const result = await postJson(
+        '/api/auth/admin/verify-reset-otp',
+        {
+          email: email.trim().toLowerCase(),
+          otp: otp.trim(),
+        }
+      )
 
       if (!result.resetToken) {
         throw new Error('Verification token missing. Please try again.')
@@ -244,13 +275,16 @@ function AdminLogin() {
       setPassword('')
       setConfirmPassword('')
       setView('reset')
+
       notify('success', 'Email verified. Set your new password.')
-    } catch (error) {
-      notify('error', error.message || 'Invalid or expired verification code.')
-    } finally {
-      setIsSubmitting(false)
     }
+  } catch (error) {
+    notify('error', error.message || 'Invalid or expired verification code.')
+  } finally {
+    setIsSubmitting(false)
   }
+}
+
 
   async function handleResetPassword(event) {
     event.preventDefault()
@@ -292,24 +326,37 @@ function AdminLogin() {
     }
   }
 
-  async function handleResendOtp() {
-    setIsSubmitting(true)
 
-    try {
-      const result = await postJson('/api/auth/admin/forgot-password', {
+async function handleResendOtp() {
+  setIsSubmitting(true)
+
+  try {
+    let result
+
+    if (otpPurpose === 'registration') {
+      result = await postJson('/api/auth/admin/register', {
+        name: name.trim(),
+        email: email.trim().toLowerCase(),
+        password,
+      })
+    } else {
+      result = await postJson('/api/auth/admin/forgot-password', {
         email: email.trim().toLowerCase(),
       })
-
-      notify(
-        'success',
-        result.message || 'If eligible, a new verification code has been sent.'
-      )
-    } catch (error) {
-      notify('error', error.message || 'Could not resend the code.')
-    } finally {
-      setIsSubmitting(false)
     }
+
+    setOtp('')
+    notify(
+      'success',
+      result.message || 'If eligible, a new verification code has been requested.'
+    )
+  } catch (error) {
+    notify('error', error.message || 'Could not resend the code.')
+  } finally {
+    setIsSubmitting(false)
   }
+}
+
 
   function renderPasswordField({
     id,

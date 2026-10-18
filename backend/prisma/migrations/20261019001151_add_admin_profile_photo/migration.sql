@@ -1,0 +1,1 @@
+ALTER TABLE "Admin" ADD COLUMN "photoUrl" VARCHAR(2048), ADD COLUMN "photoPublicId" VARCHAR(255);
