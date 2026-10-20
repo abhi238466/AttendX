@@ -7,10 +7,12 @@ import { prisma } from '../config/prisma.js'
 
 const router = Router()
 
+// Fields returned to the Admin Teacher Management UI.
 const teacherSelect = {
   id: true,
   teacherId: true,
   fullName: true,
+  photoUrl: true,
   email: true,
   phone: true,
   age: true,
@@ -26,7 +28,7 @@ const teacherSelect = {
   updatedAt: true,
 }
 
-// Admin-only authorization
+// Admin-only authorization.
 function requireAdmin(req, res, next) {
   const user = req.session?.user
 
@@ -88,7 +90,7 @@ const updateStatusSchema = z.object({
 })
 
 // GET /api/admin/teachers
-// Supports search, status filter and pagination.
+// Supports search, status filtering and pagination.
 router.get('/', async (req, res, next) => {
   try {
     const search =
@@ -103,12 +105,12 @@ router.get('/', async (req, res, next) => {
 
     const page = Math.max(
       1,
-      Math.min(1000000, Number.parseInt(req.query.page, 10) || 1)
+      Math.min(1000000, Number.parseInt(req.query.page, 10) || 1),
     )
 
     const limit = Math.max(
       1,
-      Math.min(100, Number.parseInt(req.query.limit, 10) || 10)
+      Math.min(100, Number.parseInt(req.query.limit, 10) || 10),
     )
 
     const validStatuses = [
@@ -167,7 +169,7 @@ router.get('/', async (req, res, next) => {
 })
 
 // POST /api/admin/teachers
-// Create a teacher account with a one-time temporary password.
+// Create a teacher account with a temporary password.
 router.post('/', async (req, res, next) => {
   try {
     const parsed = createTeacherSchema.safeParse(req.body)
@@ -289,7 +291,7 @@ router.post('/', async (req, res, next) => {
 })
 
 // PATCH /api/admin/teachers/:id/reset-password
-// Admin resets a teacher password and requires a new password at next login.
+// Invalidate the old password and require a password change at next login.
 router.patch('/:id/reset-password', async (req, res, next) => {
   try {
     const idResult = z.string().uuid().safeParse(req.params.id)
@@ -328,6 +330,7 @@ router.patch('/:id/reset-password', async (req, res, next) => {
 
     const temporaryPassword = generateTemporaryPassword()
     const passwordHash = await bcrypt.hash(temporaryPassword, 12)
+    const resetAt = new Date()
 
     await prisma.$transaction(async (tx) => {
       await tx.teacher.update({
@@ -335,6 +338,7 @@ router.patch('/:id/reset-password', async (req, res, next) => {
         data: {
           passwordHash,
           mustChangePassword: true,
+          updatedAt: resetAt,
         },
       })
 
@@ -347,6 +351,8 @@ router.patch('/:id/reset-password', async (req, res, next) => {
           entityId: teacherId,
           metadata: {
             teacherId: existing.teacherId,
+            resetAt: resetAt.toISOString(),
+            mustChangePassword: true,
           },
         },
       })
@@ -354,7 +360,8 @@ router.patch('/:id/reset-password', async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      message: 'Password reset successfully. Teacher must set a new password at next login.',
+      message:
+        'Password reset successfully. Teacher must set a new password at next login.',
       credentials: {
         temporaryPassword,
         mustChangePassword: true,

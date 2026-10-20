@@ -1,0 +1,81 @@
+
+/* Attendance History Page */
+
+.td-history-container {
+  width: 100%;
+  min-width: 0;
+}
+
+.td-history-card {
+  padding: 28px;
+  background: #fff;
+  border: 1px solid #e9e8f3;
+  border-radius: 20px;
+  box-shadow: 0 8px 28px rgb(36 31 86 / 5%);
+}
+
+.td-history-card h2 {
+  margin: 0 0 10px;
+  color: #211d45;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.td-history-card p {
+  margin: 0;
+  color: #77798e;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.td-history-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 230px;
+  padding: 28px;
+  text-align: center;
+  background: #faf9ff;
+  border: 1px dashed #d9d5f1;
+  border-radius: 16px;
+}
+
+.td-history-empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 58px;
+  height: 58px;
+  margin-bottom: 18px;
+  color: #5b4bdc;
+  background: #eeecff;
+  border-radius: 17px;
+  font-size: 25px;
+}
+
+.td-history-empty h2 {
+  margin: 0 0 8px;
+  color: #272344;
+  font-size: 18px;
+}
+
+.td-history-empty p {
+  max-width: 430px;
+  margin: 0;
+  color: #77798e;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+@media (max-width: 760px) {
+  .td-history-card {
+    padding: 20px 16px;
+    border-radius: 16px;
+  }
+
+  .td-history-empty {
+    min-height: 190px;
+    padding: 20px 14px;
+  }
+}

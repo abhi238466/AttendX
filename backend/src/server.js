@@ -1,4 +1,3 @@
-
 import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
@@ -10,6 +9,8 @@ import adminAuthRouter from './adminAuth.js'
 import adminTeachersRouter from './routes/adminTeachers.js'
 import adminUploadsRouter from './routes/adminUploads.js'
 import teacherAuthRouter from './teacherAuth.js'
+import teacherSessionsRouter from './routes/teacherSessions.js'
+import teacherAttendanceRouter from './routes/teacherAttendance.js'
 
 const app = express()
 
@@ -61,6 +62,21 @@ app.use(
   '/api/auth/teacher',
   teacherSessionMiddleware,
   teacherAuthRouter
+)
+
+// Teacher attendance-session management.
+// All routes use the separate Teacher session middleware.
+app.use(
+  '/api/teacher/sessions',
+  teacherSessionMiddleware,
+  teacherSessionsRouter
+)
+
+// Student attendance submission.
+// Students do not need an account or login.
+app.use(
+  '/api/attendance',
+  teacherAttendanceRouter
 )
 
 // Basic backend health check
@@ -128,6 +144,8 @@ const server = app.listen(PORT, async () => {
   console.log('║  👨‍🏫 Teachers: /api/admin/teachers')
   console.log('║  🖼️ Admin uploads: /api/admin/uploads')
   console.log('║  🔐 Teacher login: /api/auth/teacher/login')
+  console.log('║  📚 Teacher sessions: /api/teacher/sessions')
+  console.log('║  🎓 Student attendance: /api/attendance/submit')
   console.log('╚════════════════════════════════════════╝')
 
   try {

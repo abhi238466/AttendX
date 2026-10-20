@@ -1,4 +1,3 @@
-
 import { Router } from 'express'
 import bcrypt from 'bcryptjs'
 import rateLimit from 'express-rate-limit'
@@ -24,6 +23,68 @@ const loginLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Too many login attempts. Try again later.' },
 })
+
+// Email-based teacher login lockout. This uses PostgreSQL through Prisma,
+// so the lock survives a backend restart and works across backend instances.
+const TEACHER_LOGIN_MAX_FAILURES = 5
+const TEACHER_LOGIN_LOCK_MS = 15 * 60 * 1000
+
+async function getActiveTeacherLoginLock(email) {
+  const record = await prisma.teacherLoginLockout.findUnique({
+    where: { email },
+  })
+
+  if (!record?.lockedUntil) return null
+
+  const remainingMs = record.lockedUntil.getTime() - Date.now()
+  if (remainingMs > 0) return Math.ceil(remainingMs / 1000)
+
+  // The previous lock expired; clear the old counter before allowing another try.
+  await prisma.teacherLoginLockout.deleteMany({ where: { email } })
+  return null
+}
+
+async function recordTeacherLoginFailure(email) {
+  const now = new Date()
+
+  const current = await prisma.teacherLoginLockout.findUnique({
+    where: { email },
+  })
+
+  if (current?.lockedUntil && current.lockedUntil.getTime() > now.getTime()) {
+    return Math.ceil((current.lockedUntil.getTime() - now.getTime()) / 1000)
+  }
+
+  // Increment in the database to reduce lost updates if requests arrive together.
+  const updated = await prisma.teacherLoginLockout.upsert({
+    where: { email },
+    create: {
+      email,
+      failedAttempts: 1,
+    },
+    update: {
+      failedAttempts: { increment: 1 },
+      lockedUntil: null,
+    },
+  })
+
+  if (updated.failedAttempts >= TEACHER_LOGIN_MAX_FAILURES) {
+    const lockedUntil = new Date(Date.now() + TEACHER_LOGIN_LOCK_MS)
+
+    await prisma.teacherLoginLockout.update({
+      where: { email },
+      data: { lockedUntil },
+    })
+
+    return Math.ceil(TEACHER_LOGIN_LOCK_MS / 1000)
+  }
+
+  return null
+}
+
+async function clearTeacherLoginFailures(email) {
+  await prisma.teacherLoginLockout.deleteMany({ where: { email } })
+}
 
 const uploadLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -255,24 +316,56 @@ router.post('/login', loginLimiter, async (req, res, next) => {
       })
     }
 
+    const email = parsed.data.email.toLowerCase()
+
+    const remainingSeconds = await getActiveTeacherLoginLock(email)
+    if (remainingSeconds) {
+      res.set('Retry-After', String(remainingSeconds))
+      return res.status(429).json({
+        error: 'Too many failed login attempts. Try again in 15 minutes.',
+        locked: true,
+        retryAfterSeconds: remainingSeconds,
+      })
+    }
+
     const teacher = await prisma.teacher.findUnique({
-      where: { email: parsed.data.email.toLowerCase() },
+      where: { email },
     })
 
     if (
       !teacher ||
       !(await bcrypt.compare(parsed.data.password, teacher.passwordHash))
     ) {
+      const lockSeconds = await recordTeacherLoginFailure(email)
+
+      if (lockSeconds) {
+        res.set('Retry-After', String(lockSeconds))
+        return res.status(429).json({
+          error: 'Too many failed login attempts. This login is locked for 15 minutes.',
+          locked: true,
+          retryAfterSeconds: lockSeconds,
+        })
+      }
+
       return res.status(401).json({
         error: 'Invalid email or password.',
       })
     }
 
-    if (teacher.status !== 'ACTIVE') {
+    if (teacher.status === 'DEACTIVATED') {
       return res.status(403).json({
-        error: 'Your Teacher account is not active. Contact the Admin.',
+        error: 'Your account has been deactivated by Admin. Please contact Admin for assistance.',
+        accountDeactivated: true,
       })
     }
+
+    if (teacher.status !== 'ACTIVE') {
+      return res.status(403).json({
+        error: 'Your Teacher account is not active. Please contact Admin.',
+      })
+    }
+
+    await clearTeacherLoginFailures(email)
 
     await regenerateSession(req)
 

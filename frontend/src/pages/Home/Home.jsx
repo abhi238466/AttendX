@@ -1,4 +1,7 @@
 
+import { useEffect } from 'react'
+import { useNavigate, Link } from 'react-router-dom'
+
 import {
   ArrowRight,
   ArrowDownRight,
@@ -99,6 +102,23 @@ function Brand({ footer = false }) {
 }
 
 function Home() {
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    // Keep browser Back from reopening an old Admin/Teacher login while
+    // the user is on the Home page. Normal navigation inside the app remains intact.
+    window.history.pushState({ attendxHomeGuard: true }, '', '/')
+
+    const handlePopState = () => {
+      if (window.location.pathname !== '/') {
+        navigate('/', { replace: true })
+      }
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [navigate])
+
   return (
     <div className="home-page" id="home">
       <header className="home-header">
@@ -112,20 +132,20 @@ function Home() {
           </nav>
 
           <div className="home-header-actions">
-            <a
+            <Link
               className="home-header-role home-header-role-admin"
-              href="/admin/login"
+              to="/admin/login"
             >
               <ShieldCheck size={15} aria-hidden="true" />
               Admin
-            </a>
-            <a
+            </Link>
+            <Link
               className="home-header-role home-header-role-teacher"
-              href="/teacher/login"
+              to="/teacher/login"
             >
               <GraduationCap size={15} aria-hidden="true" />
               Teacher
-            </a>
+            </Link>
             <a className="home-header-cta" href="#access">
               Explore access
             </a>

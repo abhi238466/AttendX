@@ -1,0 +1,467 @@
+/* ================================
+   Teacher Profile Page
+================================ */
+
+.teacher-profile-page {
+  width: 100%;
+  min-height: 100%;
+  padding: 18px 24px;
+  box-sizing: border-box;
+  color: var(--text-primary, #172033);
+}
+
+.teacher-profile-card {
+  width: 100%;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 24px 28px;
+  box-sizing: border-box;
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--border-color, #e5eaf2);
+  border-radius: 18px;
+  box-shadow: 0 6px 24px rgb(15 23 42 / 5%);
+  animation: teacherProfileEnter 0.3s ease both;
+}
+
+@keyframes teacherProfileEnter {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ================================
+   Loading Spinner
+================================ */
+
+.teacher-profile-loading {
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  text-align: center;
+}
+
+.teacher-profile-spinner {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  box-sizing: border-box;
+  border: 4px solid var(--border-color, #e5eaf2);
+  border-top-color: var(--primary-color, #4f46e5);
+  border-radius: 50%;
+  animation: teacherProfileSpin 0.75s linear infinite;
+}
+
+.teacher-profile-loading-text {
+  margin: 0;
+  color: var(--text-secondary, #64748b);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+@keyframes teacherProfileSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ================================
+   Heading
+================================ */
+
+.teacher-profile-heading {
+  margin-bottom: 20px;
+}
+
+.teacher-profile-eyebrow {
+  display: inline-block;
+  color: var(--primary-color, #4f46e5);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+}
+
+.teacher-profile-heading h1 {
+  margin: 6px 0;
+  font-size: clamp(24px, 3vw, 30px);
+  line-height: 1.25;
+  font-weight: 800;
+}
+
+.teacher-profile-heading p {
+  margin: 0;
+  color: var(--text-secondary, #64748b);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* ================================
+   Profile Photo
+================================ */
+
+.teacher-profile-photo-section {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 20px 22px;
+  background: var(--surface-bg, #f8fafc);
+  border: 1px solid var(--border-color, #e5eaf2);
+  border-radius: 15px;
+}
+
+.teacher-profile-avatar {
+  display: flex;
+  flex: 0 0 96px;
+  width: 96px;
+  height: 96px;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 3px solid var(--card-bg, #ffffff);
+  border-radius: 50%;
+  background: var(--primary-color, #4f46e5);
+  color: #ffffff;
+  font-size: 28px;
+  font-weight: 800;
+  box-shadow: 0 4px 14px rgb(15 23 42 / 10%);
+}
+
+.teacher-profile-avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.teacher-profile-photo-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  min-width: 0;
+}
+
+.teacher-profile-photo-info h2 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 20px;
+  line-height: 1.35;
+  font-weight: 750;
+}
+
+.teacher-profile-photo-info p {
+  margin: 0 0 3px;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary, #64748b);
+  font-size: 13px;
+}
+
+.teacher-profile-file-input {
+  display: none;
+}
+
+.teacher-profile-photo-info small {
+  color: var(--text-secondary, #64748b);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* ================================
+   Buttons
+================================ */
+
+.teacher-profile-button {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 17px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: var(--primary-color, #4f46e5);
+  color: #ffffff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease,
+    opacity 0.2s ease;
+}
+
+.teacher-profile-button:hover:not(:disabled) {
+  opacity: 0.96;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgb(79 70 229 / 20%);
+}
+
+.teacher-profile-button:focus-visible,
+.teacher-profile-back-button:focus-visible {
+  outline: 3px solid rgb(79 70 229 / 25%);
+  outline-offset: 3px;
+}
+
+.teacher-profile-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+/* ================================
+   Account Details
+================================ */
+
+.teacher-profile-details {
+  margin-top: 24px;
+}
+
+.teacher-profile-details h3 {
+  margin: 0 0 8px;
+  font-size: 17px;
+  font-weight: 750;
+}
+
+.teacher-profile-detail {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--border-color, #e5eaf2);
+}
+
+.teacher-profile-detail:last-child {
+  border-bottom: 0;
+}
+
+.teacher-profile-detail span {
+  flex: 0 0 auto;
+  color: var(--text-secondary, #64748b);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.teacher-profile-detail strong {
+  max-width: 65%;
+  overflow-wrap: anywhere;
+  text-align: right;
+  font-size: 13px;
+  line-height: 1.6;
+  font-weight: 650;
+}
+
+/* ================================
+   Success and Error Messages
+================================ */
+
+.teacher-profile-success,
+.teacher-profile-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 16px 0 0;
+  padding: 12px 15px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  animation: teacherMessageEnter 0.22s ease both;
+}
+
+.teacher-profile-success {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.teacher-profile-success::before {
+  content: "✓";
+  display: inline-flex;
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #dcfce7;
+  font-weight: 800;
+}
+
+.teacher-profile-error {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.teacher-profile-error::before {
+  content: "!";
+  display: inline-flex;
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #fee2e2;
+  font-weight: 800;
+}
+
+@keyframes teacherMessageEnter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ================================
+   Back Button
+================================ */
+
+.teacher-profile-back-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  margin-top: 18px;
+  padding: 9px 15px;
+  border: 1px solid var(--border-color, #e5eaf2);
+  border-radius: 9px;
+  background: var(--card-bg, #ffffff);
+  color: var(--text-primary, #172033);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.teacher-profile-back-button:hover {
+  border-color: var(--primary-color, #4f46e5);
+  background: var(--surface-bg, #f8fafc);
+}
+
+/* ================================
+   Tablet
+================================ */
+
+@media (max-width: 900px) {
+  .teacher-profile-page {
+    padding: 16px;
+  }
+
+  .teacher-profile-card {
+    padding: 22px;
+  }
+
+  .teacher-profile-photo-section {
+    gap: 18px;
+    padding: 18px;
+  }
+}
+
+/* ================================
+   Mobile
+================================ */
+
+@media (max-width: 600px) {
+  .teacher-profile-page {
+    padding: 12px;
+  }
+
+  .teacher-profile-card {
+    padding: 18px 15px;
+    border-radius: 15px;
+  }
+
+  .teacher-profile-loading {
+    min-height: 200px;
+  }
+
+  .teacher-profile-heading {
+    margin-bottom: 18px;
+  }
+
+  .teacher-profile-heading h1 {
+    font-size: 25px;
+  }
+
+  .teacher-profile-photo-section {
+    flex-direction: column;
+    align-items: center;
+    gap: 13px;
+    padding: 20px 13px;
+    text-align: center;
+  }
+
+  .teacher-profile-photo-info {
+    align-items: center;
+    width: 100%;
+  }
+
+  .teacher-profile-photo-info h2 {
+    font-size: 19px;
+  }
+
+  .teacher-profile-avatar {
+    flex-basis: 92px;
+    width: 92px;
+    height: 92px;
+    font-size: 26px;
+  }
+
+  .teacher-profile-detail {
+    gap: 12px;
+    padding: 12px 0;
+  }
+
+  .teacher-profile-detail span {
+    max-width: 42%;
+  }
+
+  .teacher-profile-detail strong {
+    max-width: 58%;
+  }
+
+  .teacher-profile-success,
+  .teacher-profile-error {
+    padding: 11px 12px;
+  }
+}
+
+/* ================================
+   Reduced Motion
+================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  .teacher-profile-card,
+  .teacher-profile-success,
+  .teacher-profile-error {
+    animation: none;
+  }
+
+  .teacher-profile-button,
+  .teacher-profile-back-button {
+    transition: none;
+  }
+
+  .teacher-profile-spinner {
+    animation-duration: 1.5s;
+  }
+}
