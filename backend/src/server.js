@@ -5,9 +5,11 @@ import cors from 'cors'
 import helmet from 'helmet'
 import { prisma } from './config/prisma.js'
 import { sessionMiddleware } from './config/session.js'
+import { teacherSessionMiddleware } from './config/teacherSession.js'
 import adminAuthRouter from './adminAuth.js'
 import adminTeachersRouter from './routes/adminTeachers.js'
 import adminUploadsRouter from './routes/adminUploads.js'
+import teacherAuthRouter from './teacherAuth.js'
 
 const app = express()
 
@@ -35,17 +37,31 @@ app.use(
 
 app.use(express.json({ limit: '20kb' }))
 
-// Session middleware must run before authenticated routes.
-app.use(sessionMiddleware)
+// Admin routes use the existing Admin session.
+app.use(
+  '/api/auth/admin',
+  sessionMiddleware,
+  adminAuthRouter
+)
 
-// Admin authentication routes
-app.use('/api/auth/admin', adminAuthRouter)
+app.use(
+  '/api/admin/teachers',
+  sessionMiddleware,
+  adminTeachersRouter
+)
 
-// Admin Teacher Management routes
-app.use('/api/admin/teachers', adminTeachersRouter)
+app.use(
+  '/api/admin/uploads',
+  sessionMiddleware,
+  adminUploadsRouter
+)
 
-// Admin profile photo upload route
-app.use('/api/admin/uploads', adminUploadsRouter)
+// Teacher authentication uses a separate session and cookie.
+app.use(
+  '/api/auth/teacher',
+  teacherSessionMiddleware,
+  teacherAuthRouter
+)
 
 // Basic backend health check
 app.get('/health', (req, res) => {
@@ -111,6 +127,7 @@ const server = app.listen(PORT, async () => {
   console.log('║  🐘 DB:     /health/db')
   console.log('║  👨‍🏫 Teachers: /api/admin/teachers')
   console.log('║  🖼️ Admin uploads: /api/admin/uploads')
+  console.log('║  🔐 Teacher login: /api/auth/teacher/login')
   console.log('╚════════════════════════════════════════╝')
 
   try {
