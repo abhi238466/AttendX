@@ -106,20 +106,24 @@ model Teacher {
   @@index([status, createdAt])
 }
 
+
 model AttendanceSession {
-  id           String                  @id @default(uuid()) @db.Uuid
-  teacherId    String                  @db.Uuid
+  id        String @id @default(uuid()) @db.Uuid
+  teacherId String @db.Uuid
 
   // Session header
-  courseName   String                  @db.VarChar(150)
-  subjectName  String?                 @db.VarChar(150)
-  roomName     String?                 @db.VarChar(100)
-  sections     String[]
+  courseName  String  @db.VarChar(150)
+  subjectName String? @db.VarChar(150)
+  className   String? @db.VarChar(100)
+  roomName    String? @db.VarChar(100)
+  sections    String[]
 
   // Teacher's captured classroom location and chosen radius
-  latitude     Float
-  longitude    Float
-  radiusMeters Int
+  latitude               Float
+  longitude              Float
+  locationAccuracyMeters Float?
+  locationCapturedAt     DateTime?
+  radiusMeters           Int
 
   // Optional timetable fields; old sessions remain valid
   scheduledStartsAt      DateTime?
@@ -127,11 +131,11 @@ model AttendanceSession {
   attendanceWindowEndsAt DateTime?
 
   // Actual session lifecycle
-  status       AttendanceSessionStatus @default(ACTIVE)
-  startsAt     DateTime                @default(now())
-  endsAt       DateTime?
-  createdAt    DateTime                @default(now())
-  updatedAt    DateTime                @updatedAt
+  status     AttendanceSessionStatus @default(ACTIVE)
+  startsAt   DateTime                @default(now())
+  endsAt     DateTime?
+  createdAt  DateTime                @default(now())
+  updatedAt  DateTime                @updatedAt
 
   teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Restrict)
 

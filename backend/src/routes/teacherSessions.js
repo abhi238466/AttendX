@@ -16,10 +16,15 @@ const MIN_RADIUS_METERS = 5
 const MAX_RADIUS_METERS = 80
 const DEFAULT_RADIUS_METERS = 25
 const MAX_SESSION_DURATION_MINUTES = 240
-const TOKEN_LIFETIME_SECONDS = 15
+const TOKEN_LIFETIME_SECONDS = 50
 
 const createSessionSchema = z.object({
   courseName: z.string().trim().min(2).max(150),
+  subjectName: z.string().trim().min(1).max(150),
+  className: z.string().trim().max(100).optional(),
+  roomName: z.string().trim().max(100).optional(),
+  scheduledStartsAt: z.string().datetime({ offset: true }),
+  scheduledEndsAt: z.string().datetime({ offset: true }),
 
   sections: z
     .array(z.string().trim().min(1).max(50))
@@ -28,6 +33,8 @@ const createSessionSchema = z.object({
 
   latitude: z.number().finite().min(-90).max(90),
   longitude: z.number().finite().min(-180).max(180),
+  locationAccuracyMeters: z.number().finite().positive().max(50),
+  locationCapturedAt: z.string().datetime({ offset: true }),
 
   radiusMeters: z
     .number()
@@ -86,6 +93,13 @@ function sessionResponse(attendanceSession) {
   return {
     id: attendanceSession.id,
     courseName: attendanceSession.courseName,
+    subjectName: attendanceSession.subjectName,
+    className: attendanceSession.className,
+    roomName: attendanceSession.roomName,
+    locationAccuracyMeters: attendanceSession.locationAccuracyMeters,
+    locationCapturedAt: attendanceSession.locationCapturedAt,
+    scheduledStartsAt: attendanceSession.scheduledStartsAt,
+    scheduledEndsAt: attendanceSession.scheduledEndsAt,
     sections: attendanceSession.sections,
     latitude: attendanceSession.latitude,
     longitude: attendanceSession.longitude,
@@ -107,10 +121,12 @@ function hashToken(token) {
 }
 
 function generateTextCode() {
-  const letter = String.fromCharCode(65 + randomInt(0, 26))
-  const digits = String(randomInt(0, 10000)).padStart(4, '0')
+  const letters =
+    String.fromCharCode(65 + randomInt(0, 26)) +
+    String.fromCharCode(65 + randomInt(0, 26))
+  const digits = String(randomInt(0, 1_000_000)).padStart(6, '0')
 
-  return `${letter}${digits}`
+  return `${letters}${digits}`
 }
 
 function getStudentAttendanceUrl(sessionId, token) {
@@ -143,6 +159,41 @@ router.post('/', requireTeacher, async (req, res, next) => {
 
     const input = parsed.data
     const sections = normalizeSections(input.sections)
+    const scheduledStartsAt = new Date(input.scheduledStartsAt)
+    const scheduledEndsAt = new Date(input.scheduledEndsAt)
+    const locationCapturedAt = new Date(input.locationCapturedAt)
+    const locationAgeMs = Date.now() - locationCapturedAt.getTime()
+
+    // Require a fresh classroom reading for each new session.
+    // This freshness check does not prove the GPS coordinates are authentic.
+    // Include timestamp diagnostics so a stale/future reading can be identified
+    // from the Network response without weakening the freshness requirement.
+    if (
+      Number.isNaN(locationCapturedAt.getTime()) ||
+      locationAgeMs < -5000 ||
+      locationAgeMs > 60_000
+    ) {
+      return res.status(400).json({
+        error: 'Capture your current classroom location again before starting attendance.',
+        code: 'LOCATION_READING_STALE',
+        details: {
+          locationCapturedAt: input.locationCapturedAt,
+          serverTime: new Date().toISOString(),
+          locationAgeMs: Number.isFinite(locationAgeMs) ? Math.round(locationAgeMs) : null,
+          allowedAgeMs: { minimum: -5000, maximum: 60000 },
+        },
+      })
+    }
+
+    if (
+      Number.isNaN(scheduledStartsAt.getTime()) ||
+      Number.isNaN(scheduledEndsAt.getTime()) ||
+      scheduledEndsAt <= scheduledStartsAt
+    ) {
+      return res.status(400).json({
+        error: 'Class end time must be later than class start time.',
+      })
+    }
 
     if (!sections) {
       return res.status(400).json({
@@ -176,6 +227,15 @@ router.post('/', requireTeacher, async (req, res, next) => {
     )
 
     const createdSession = await prisma.$transaction(async (tx) => {
+      // Serialize session creation for this teacher so simultaneous requests
+      // cannot both pass the active-session check.
+     await tx.$queryRaw`
+  SELECT id
+  FROM "Teacher"
+  WHERE id = ${teacher.id}::uuid
+  FOR UPDATE
+`
+
       const activeSession = await tx.attendanceSession.findFirst({
         where: {
           teacherId: teacher.id,
@@ -202,6 +262,13 @@ router.post('/', requireTeacher, async (req, res, next) => {
           id: randomUUID(),
           teacherId: teacher.id,
           courseName: input.courseName,
+          subjectName: input.subjectName,
+          className: input.className?.trim() || null,
+          roomName: input.roomName?.trim() || null,
+          locationAccuracyMeters: input.locationAccuracyMeters,
+          locationCapturedAt: new Date(input.locationCapturedAt),
+          scheduledStartsAt,
+          scheduledEndsAt,
           sections,
           latitude: input.latitude,
           longitude: input.longitude,
@@ -221,7 +288,16 @@ router.post('/', requireTeacher, async (req, res, next) => {
           entityId: attendanceSession.id,
           metadata: {
             courseName: attendanceSession.courseName,
+            subjectName: attendanceSession.subjectName,
+            className: attendanceSession.className,
+            roomName: attendanceSession.roomName,
+            teacherLatitude: attendanceSession.latitude,
+            teacherLongitude: attendanceSession.longitude,
+            locationAccuracyMeters: attendanceSession.locationAccuracyMeters,
+            locationCapturedAt: attendanceSession.locationCapturedAt.toISOString(),
             sections: attendanceSession.sections,
+            scheduledStartsAt: attendanceSession.scheduledStartsAt.toISOString(),
+            scheduledEndsAt: attendanceSession.scheduledEndsAt.toISOString(),
             radiusMeters: attendanceSession.radiusMeters,
             durationMinutes: input.durationMinutes,
           },
@@ -358,55 +434,166 @@ router.post(
         })
       }
 
-      // Raw tokens are returned to the teacher but never stored in the DB.
-      const qrToken = randomBytes(32).toString('base64url')
-      const textCode = generateTextCode()
+      // Raw tokens are returned only to the authenticated teacher.
+      // A PostgreSQL transaction advisory lock serializes code generation
+      // across teachers and backend instances sharing this database.
+      let qrToken
+      let textCode
+      let tokenPairCreated = false
 
-      await prisma.$transaction(async (tx) => {
-        // Revoke previous tokens before inserting the new pair.
-        // Even if their old expiry time has not arrived, they can no
-        // longer be used once the new pair is generated.
-        await tx.qrCodeToken.updateMany({
-          where: {
-            attendanceSessionId: attendanceSession.id,
-            expiresAt: { gt: now },
-          },
-          data: {
-            expiresAt: now,
-          },
-        })
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        try {
+          await prisma.$transaction(async (tx) => {
+            // Global lock: do not replace with a JavaScript Set/Map.
+            await tx.$executeRaw`
+  SELECT pg_advisory_xact_lock(73829104)
+`
 
-        await tx.qrCodeToken.createMany({
-          data: [
-            {
-              attendanceSessionId: attendanceSession.id,
-              tokenHash: hashToken(qrToken),
-              tokenType: 'QR',
-              expiresAt,
-            },
-            {
-              attendanceSessionId: attendanceSession.id,
-              tokenHash: hashToken(textCode),
-              tokenType: 'TEXT_CODE',
-              expiresAt,
-            },
-          ],
-        })
+            // Also lock this session so simultaneous rotations for the same
+            // teacher/session cannot leave two current token pairs.
+            await tx.$queryRaw`
+              SELECT id
+              FROM "AttendanceSession"
+              WHERE id = ${attendanceSession.id}::uuid
+              FOR UPDATE
+            `
 
-        await tx.auditLog.create({
-          data: {
-            actorType: 'TEACHER',
-            actorId: teacher.id,
-            action: 'ATTENDANCE_TOKENS_ROTATED',
-            entityType: 'AttendanceSession',
-            entityId: attendanceSession.id,
-            metadata: {
-              expiresAt: expiresAt.toISOString(),
-              tokenLifetimeSeconds: TOKEN_LIFETIME_SECONDS,
-            },
-          },
+            const currentSession = await tx.attendanceSession.findUnique({
+              where: { id: attendanceSession.id },
+              select: {
+                status: true,
+                startsAt: true,
+                endsAt: true,
+              },
+            })
+
+            const transactionNow = new Date()
+
+            if (
+              !currentSession ||
+              currentSession.status !== 'ACTIVE' ||
+              currentSession.startsAt > transactionNow ||
+              !currentSession.endsAt ||
+              currentSession.endsAt <= transactionNow
+            ) {
+              const error = new Error(
+                'This session has ended or is not active.'
+              )
+              error.code = 'SESSION_NOT_ACTIVE'
+              throw error
+            }
+
+            // Remove expired rows; they cannot be used again.
+            await tx.qrCodeToken.deleteMany({
+              where: {
+                expiresAt: { lte: transactionNow },
+              },
+            })
+
+            // Generate a code under the global DB lock and check its hash
+            // before inserting. This prevents active codes from being shared
+            // by different teachers even when requests arrive together.
+            let uniqueTextCode = null
+
+            for (let codeAttempt = 0; codeAttempt < 30; codeAttempt += 1) {
+              const candidate = generateTextCode()
+              const existing = await tx.qrCodeToken.findFirst({
+                where: {
+                  tokenHash: hashToken(candidate),
+                  expiresAt: { gt: transactionNow },
+                },
+                select: { id: true },
+              })
+
+              if (!existing) {
+                uniqueTextCode = candidate
+                break
+              }
+            }
+
+            if (!uniqueTextCode) {
+              const error = new Error(
+                'Could not generate a unique attendance code. Please retry.'
+              )
+              error.code = 'TEXT_CODE_GENERATION_FAILED'
+              throw error
+            }
+
+            qrToken = randomBytes(32).toString('base64url')
+            textCode = uniqueTextCode
+
+            // Revoke the previous pair for this session, then save the new
+            // QR and text code atomically. Any failure rolls this back.
+            await tx.qrCodeToken.updateMany({
+              where: {
+                attendanceSessionId: attendanceSession.id,
+                expiresAt: { gt: transactionNow },
+              },
+              data: {
+                expiresAt: transactionNow,
+              },
+            })
+
+            await tx.qrCodeToken.createMany({
+              data: [
+                {
+                  attendanceSessionId: attendanceSession.id,
+                  tokenHash: hashToken(qrToken),
+                  tokenType: 'QR',
+                  expiresAt,
+                },
+                {
+                  attendanceSessionId: attendanceSession.id,
+                  tokenHash: hashToken(textCode),
+                  tokenType: 'TEXT_CODE',
+                  expiresAt,
+                },
+              ],
+            })
+
+            await tx.auditLog.create({
+              data: {
+                actorType: 'TEACHER',
+                actorId: teacher.id,
+                action: 'ATTENDANCE_TOKENS_ROTATED',
+                entityType: 'AttendanceSession',
+                entityId: attendanceSession.id,
+                metadata: {
+                  expiresAt: expiresAt.toISOString(),
+                  tokenLifetimeSeconds: TOKEN_LIFETIME_SECONDS,
+                },
+              },
+            })
+          })
+
+          tokenPairCreated = true
+          break
+        } catch (error) {
+          if (error?.code === 'SESSION_NOT_ACTIVE') {
+            return res.status(409).json({
+              error: 'This session has ended or is not active.',
+            })
+          }
+
+          if (error?.code === 'TEXT_CODE_GENERATION_FAILED') {
+            return res.status(503).json({ error: error.message })
+          }
+
+          // A database unique constraint can still catch a collision,
+          // including an exceptionally unlikely QR-token hash collision.
+          if (error?.code === 'P2002' && attempt < 4) {
+            continue
+          }
+
+          throw error
+        }
+      }
+
+      if (!tokenPairCreated) {
+        return res.status(503).json({
+          error: 'Could not generate a unique attendance code. Please retry.',
         })
-      })
+      }
 
       return res.json({
         message: 'Attendance tokens generated successfully.',

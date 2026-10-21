@@ -1,0 +1,322 @@
+
+/* ========================================
+   AttendX - Student Attendance
+   ======================================== */
+
+.student-attendance-page {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 36px 18px;
+  background:
+    radial-gradient(
+      circle at 10% 10%,
+      rgba(59, 130, 246, 0.12),
+      transparent 32%
+    ),
+    radial-gradient(
+      circle at 90% 90%,
+      rgba(99, 102, 241, 0.12),
+      transparent 30%
+    ),
+    #f4f7fc;
+  box-sizing: border-box;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+}
+
+.student-attendance-page *,
+.student-attendance-page *::before,
+.student-attendance-page *::after {
+  box-sizing: border-box;
+}
+
+.student-attendance-card {
+  width: 100%;
+  max-width: 490px;
+  padding: 38px;
+  background: #ffffff;
+  border: 1px solid #e7ecf4;
+  border-radius: 24px;
+  box-shadow:
+    0 24px 65px rgba(31, 48, 83, 0.09),
+    0 4px 12px rgba(31, 48, 83, 0.04);
+  animation: studentCardAppear 0.35s ease-out;
+}
+
+.student-attendance-brand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 9px 17px;
+  margin-bottom: 22px;
+  color: #ffffff;
+  background: linear-gradient(135deg, #2563eb, #4f46e5);
+  border-radius: 12px;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.4px;
+  box-shadow: 0 5px 14px rgba(59, 91, 219, 0.2);
+}
+
+.student-attendance-card h1 {
+  margin: 0 0 10px;
+  color: #17233d;
+  font-size: clamp(25px, 4vw, 31px);
+  line-height: 1.25;
+  font-weight: 800;
+  letter-spacing: -0.8px;
+}
+
+.student-attendance-description {
+  margin: 0 0 28px;
+  color: #66738a;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+/* Forms */
+
+.student-attendance-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.student-attendance-card label {
+  margin-top: 8px;
+  color: #34415b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.student-attendance-card input,
+.student-attendance-card select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 49px;
+  padding: 12px 14px;
+  color: #1d293d;
+  background: #fbfcff;
+  border: 1px solid #dce3ee;
+  border-radius: 11px;
+  outline: none;
+  font: inherit;
+  font-size: 14px;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background 0.2s ease;
+}
+
+.student-attendance-card input::placeholder {
+  color: #9aa5b7;
+}
+
+.student-attendance-card input:hover,
+.student-attendance-card select:hover {
+  border-color: #aebfe0;
+}
+
+.student-attendance-card input:focus,
+.student-attendance-card select:focus {
+  background: #ffffff;
+  border-color: #4674ef;
+  box-shadow: 0 0 0 4px rgba(70, 116, 239, 0.12);
+}
+
+.student-attendance-card input:disabled,
+.student-attendance-card select:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+/* Buttons */
+
+.student-attendance-card button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 49px;
+  margin-top: 12px;
+  padding: 13px 18px;
+  color: #ffffff;
+  background: linear-gradient(135deg, #2563eb, #4f46e5);
+  border: 1px solid transparent;
+  border-radius: 11px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 750;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    opacity 0.2s ease;
+}
+
+.student-attendance-card button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(59, 91, 219, 0.22);
+}
+
+.student-attendance-card button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.student-attendance-card button:focus-visible {
+  outline: 3px solid rgba(59, 91, 219, 0.3);
+  outline-offset: 3px;
+}
+
+.student-attendance-card button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+/* Second button: Use Another Code */
+
+.student-attendance-card form button[type="button"] {
+  margin-top: 2px;
+  color: #40516f;
+  background: #ffffff;
+  border-color: #dce3ee;
+  box-shadow: none;
+}
+
+.student-attendance-card form button[type="button"]:hover:not(:disabled) {
+  color: #254fc4;
+  background: #f5f8ff;
+  border-color: #b8c9f5;
+}
+
+/* Messages */
+
+.student-attendance-error,
+.student-attendance-success,
+.student-session-notice {
+  width: 100%;
+  margin: 10px 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.student-attendance-error {
+  color: #b42332;
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+}
+
+.student-attendance-success {
+  color: #147344;
+  background: #ecfdf3;
+  border: 1px solid #b7ebcd;
+}
+
+.student-session-notice {
+  color: #254fc4;
+  background: #eff5ff;
+  border: 1px solid #cbdcff;
+}
+
+/* Help text */
+
+.student-attendance-help {
+  margin: 22px 0 0;
+  color: #78859a;
+  font-size: 12px;
+  line-height: 1.8;
+  text-align: center;
+}
+
+/* Animation */
+
+@keyframes studentCardAppear {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Tablet */
+
+@media (max-width: 768px) {
+  .student-attendance-page {
+    padding: 28px 16px;
+  }
+
+  .student-attendance-card {
+    max-width: 470px;
+    padding: 32px;
+    border-radius: 21px;
+  }
+}
+
+/* Mobile */
+
+@media (max-width: 480px) {
+  .student-attendance-page {
+    align-items: flex-start;
+    padding: 22px 13px;
+  }
+
+  .student-attendance-card {
+    padding: 25px 19px;
+    border-radius: 18px;
+  }
+
+  .student-attendance-brand {
+    margin-bottom: 18px;
+    font-size: 16px;
+  }
+
+  .student-attendance-card h1 {
+    font-size: 25px;
+  }
+
+  .student-attendance-description {
+    margin-bottom: 22px;
+    font-size: 13px;
+  }
+
+  .student-attendance-card input,
+  .student-attendance-card select {
+    min-height: 47px;
+    font-size: 14px;
+  }
+
+  .student-attendance-card button {
+    min-height: 47px;
+  }
+
+  .student-attendance-help {
+    margin-top: 18px;
+  }
+}
+
+/* Reduced motion accessibility */
+
+@media (prefers-reduced-motion: reduce) {
+  .student-attendance-card {
+    animation: none;
+  }
+
+  .student-attendance-card *,
+  .student-attendance-card *::before,
+  .student-attendance-card *::after {
+    transition: none !important;
+  }
+}

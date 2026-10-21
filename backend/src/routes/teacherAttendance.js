@@ -1,4 +1,3 @@
-
 import { Router } from 'express'
 import {
   createHash,
@@ -19,7 +18,8 @@ const MAX_LOCATION_ACCURACY_METERS = 50
 
 const attendanceLimiter = rateLimit({
   windowMs: 60 * 1000,
-  limit: 10,
+  // Students in one classroom may share the same public IP address.
+  limit: 120,
   standardHeaders: 'draft-8',
   legacyHeaders: false,
   message: {
@@ -29,8 +29,18 @@ const attendanceLimiter = rateLimit({
 })
 
 const challengeSchema = z.object({
-  attendanceSessionId: z.string().uuid(),
+  attendanceSessionId: z.string().uuid().optional(),
   token: z.string().trim().min(1).max(500),
+}).superRefine((data, ctx) => {
+  const isTextCode = /^[A-Z]{2}\d{6}$/i.test(data.token.trim())
+
+  if (!isTextCode && !data.attendanceSessionId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['attendanceSessionId'],
+      message: 'A session ID is required for QR verification.',
+    })
+  }
 })
 
 const attendanceSchema = z.object({
@@ -42,7 +52,9 @@ const attendanceSchema = z.object({
   section: z.string().trim().min(1).max(50),
   latitude: z.number().finite().min(-90).max(90),
   longitude: z.number().finite().min(-180).max(180),
-  locationAccuracyMeters: z.number().finite().min(0).max(10000),
+  locationAccuracyMeters: z.number().finite().positive().max(10000),
+  // Client capture time is checked for freshness; it is not trusted as identity proof.
+  locationCapturedAt: z.string().datetime({ offset: true }),
 })
 
 function hashToken(value) {
@@ -165,14 +177,58 @@ router.post(
 
     const data = parsed.data
     const submittedToken = data.token.trim()
-    const isTextCode = /^[A-Z]\d{4}$/i.test(submittedToken)
+    const isTextCode = /^[A-Z]{2}\d{6}$/i.test(submittedToken)
     const tokenType = isTextCode ? 'TEXT_CODE' : 'QR'
     const normalizedToken = isTextCode
       ? submittedToken.toUpperCase()
       : submittedToken
 
     try {
-      const session = await getSession(data.attendanceSessionId)
+      // Text codes resolve to their owning session in the database.
+      // Never trust a session ID supplied alongside a text code.
+      let attendanceSessionId = data.attendanceSessionId
+
+      if (isTextCode) {
+        // A text code must resolve to exactly one active token record.
+        // If two teachers happen to receive the same short code at once,
+        // never guess which classroom the student intended.
+        const textCodeRecords = await prisma.qrCodeToken.findMany({
+          where: {
+            tokenHash: hashToken(normalizedToken),
+            tokenType: 'TEXT_CODE',
+            expiresAt: {
+              gt: new Date(),
+            },
+          },
+          select: {
+            attendanceSessionId: true,
+          },
+          take: 2,
+        })
+
+        if (textCodeRecords.length === 0) {
+          return fail(
+            res,
+            400,
+            'This code is invalid or expired. Please enter the current code.'
+          )
+        }
+
+        if (textCodeRecords.length > 1) {
+          console.error(
+            'Active text-code collision detected. Refusing ambiguous attendance lookup.'
+          )
+          return fail(
+            res,
+            409,
+            'This code is being used by more than one active session. Please ask your teacher to refresh the code.'
+          )
+        }
+
+        attendanceSessionId = textCodeRecords[0].attendanceSessionId
+      }
+
+      const session = await getSession(attendanceSessionId)
 
       if (!session) {
         return fail(res, 404, 'Attendance session was not found.')
@@ -388,9 +444,36 @@ router.post(
         )
       }
 
+      const locationCapturedAt = new Date(data.locationCapturedAt)
+      const locationAgeMs = Date.now() - locationCapturedAt.getTime()
+
+      // Reject stale/future-dated browser readings. Client timestamps can be spoofed,
+      // so this is a quality check, not proof that the device is physically present.
       if (
-        data.locationAccuracyMeters >
-        MAX_LOCATION_ACCURACY_METERS
+        Number.isNaN(locationCapturedAt.getTime()) ||
+        locationAgeMs < -5000 ||
+        locationAgeMs > 30_000
+      ) {
+        await logAttempt({
+          attendanceSessionId: session.id,
+          normalizedUniversityRollNumber,
+          outcome: 'INACCURATE_LOCATION',
+          latitude: data.latitude,
+          longitude: data.longitude,
+          locationAccuracyMeters: data.locationAccuracyMeters,
+          riskFlags: ['LOCATION_READING_STALE_OR_FUTURE'],
+        })
+
+        return fail(
+          res,
+          400,
+          'Your location reading is too old. Capture your current location again.'
+        )
+      }
+
+      if (
+        data.locationAccuracyMeters <= 0 ||
+        data.locationAccuracyMeters > MAX_LOCATION_ACCURACY_METERS
       ) {
         await logAttempt({
           attendanceSessionId: session.id,
@@ -416,7 +499,13 @@ router.post(
         data.longitude
       )
 
-      if (!isWithinRadius(distanceMeters, session.radiusMeters)) {
+      // Conservative geofence: distance alone can falsely accept a low-precision fix.
+      // Require distance + reported accuracy to fit inside the configured radius.
+      // Browser-reported accuracy is not independently verified and can be spoofed.
+      const conservativeDistanceMeters =
+        distanceMeters + data.locationAccuracyMeters
+
+      if (!isWithinRadius(conservativeDistanceMeters, session.radiusMeters)) {
         await logAttempt({
           attendanceSessionId: session.id,
           normalizedUniversityRollNumber,
@@ -424,7 +513,7 @@ router.post(
           latitude: data.latitude,
           longitude: data.longitude,
           locationAccuracyMeters: data.locationAccuracyMeters,
-          distanceMeters,
+          distanceMeters: conservativeDistanceMeters,
         })
 
         return fail(
@@ -435,6 +524,15 @@ router.post(
       }
 
       const result = await prisma.$transaction(async (tx) => {
+        // Serialize attendance submission against session closure for this session.
+        // PostgreSQL row lock prevents a close request from racing past this check.
+        await tx.$queryRaw`
+          SELECT id
+          FROM "AttendanceSession"
+          WHERE id = ${session.id}::uuid
+          FOR UPDATE
+        `
+
         const transactionNow = new Date()
 
         // Recheck the hard deadline immediately before accepting

@@ -1,9 +1,13 @@
-
-/* Start Attendance Page */
+/* ========================================
+   Start Attendance Page
+   Responsive CSS
+   Compatible with StartAttendance.jsx
+======================================== */
 
 .td-page-content {
   width: 100%;
   min-width: 0;
+  color: #211d45;
 }
 
 .td-page-heading {
@@ -14,12 +18,17 @@
   margin-bottom: 28px;
 }
 
+.td-page-heading > div {
+  min-width: 0;
+}
+
 .td-page-heading h1 {
   margin: 8px 0 10px;
   color: #17152f;
   font-size: clamp(25px, 3vw, 34px);
   font-weight: 800;
   line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
 .td-page-heading p {
@@ -30,37 +39,54 @@
 }
 
 .td-page-heading .td-eyebrow {
+  margin-bottom: 6px;
   color: #635bdb;
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 1.5px;
 }
 
+/* ========================================
+   Buttons
+======================================== */
+
 .td-secondary-btn,
-.td-primary-btn {
+.td-primary-btn,
+.td-add-section-btn,
+.td-section-remove-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 44px;
-  padding: 11px 20px;
-  border-radius: 12px;
+  gap: 8px;
+  font-family: inherit;
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
   transition:
     background 0.2s ease,
-    transform 0.2s ease,
-    box-shadow 0.2s ease;
+    color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.td-secondary-btn,
+.td-primary-btn {
+  min-height: 44px;
+  padding: 11px 20px;
+  border-radius: 12px;
 }
 
 .td-secondary-btn {
+  flex-shrink: 0;
   color: #39316f;
   background: #fff;
   border: 1px solid #e1e0f0;
 }
 
-.td-secondary-btn:hover {
+.td-secondary-btn:hover:not(:disabled) {
   background: #f5f4ff;
+  border-color: #c8c2f5;
 }
 
 .td-primary-btn {
@@ -71,14 +97,45 @@
   box-shadow: 0 7px 18px rgb(81 64 216 / 15%);
 }
 
-.td-primary-btn:hover {
+.td-primary-btn:hover:not(:disabled) {
   background: #4030c2;
+  border-color: #4030c2;
   transform: translateY(-1px);
 }
 
+.td-secondary-btn:disabled,
+.td-primary-btn:disabled,
+.td-add-section-btn:disabled,
+.td-section-remove-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.td-secondary-btn:focus-visible,
+.td-primary-btn:focus-visible,
+.td-add-section-btn:focus-visible,
+.td-section-remove-btn:focus-visible {
+  outline: 3px solid rgb(101 87 232 / 25%);
+  outline-offset: 3px;
+}
+
+.td-primary-btn svg,
+.td-secondary-btn svg,
+.td-add-section-btn svg,
+.td-section-remove-btn svg {
+  flex-shrink: 0;
+}
+
+/* ========================================
+   Form Card
+======================================== */
+
 .td-attendance-form-card {
   width: 100%;
-  max-width: 720px;
+  max-width: 820px;
+  min-width: 0;
   padding: 30px;
   background: #fff;
   border: 1px solid #e9e8f3;
@@ -91,6 +148,7 @@
   color: #211d45;
   font-size: 21px;
   font-weight: 800;
+  line-height: 1.4;
 }
 
 .td-form-description {
@@ -100,26 +158,60 @@
   line-height: 1.7;
 }
 
+/* ========================================
+   Form Layout
+======================================== */
+
 .td-attendance-form {
-  display: flex;
-  flex-direction: column;
-  gap: 21px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 21px 20px;
+  width: 100%;
 }
 
 .td-form-group {
   display: flex;
   flex-direction: column;
   gap: 9px;
+  min-width: 0;
+}
+
+.td-form-full {
+  grid-column: 1 / -1;
+  min-width: 0;
 }
 
 .td-form-group label {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
   color: #302d4e;
   font-size: 13px;
   font-weight: 700;
+  line-height: 1.5;
 }
 
-.td-form-group input {
+.td-form-group label svg {
+  flex-shrink: 0;
+  color: #635bdb;
+}
+
+.td-form-group label span {
+  color: #89899e;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* ========================================
+   Inputs and Selects
+======================================== */
+
+.td-form-group input,
+.td-form-group select {
+  display: block;
   width: 100%;
+  min-width: 0;
   min-height: 47px;
   padding: 12px 14px;
   color: #252342;
@@ -127,33 +219,202 @@
   border: 1px solid #deddec;
   border-radius: 11px;
   outline: none;
-  font: inherit;
+  font-family: inherit;
   font-size: 14px;
+  line-height: 1.4;
   transition:
     border-color 0.2s ease,
     box-shadow 0.2s ease,
     background 0.2s ease;
+  box-sizing: border-box;
+}
+
+.td-form-group select {
+  cursor: pointer;
 }
 
 .td-form-group input::placeholder {
   color: #a1a1b4;
+  opacity: 1;
 }
 
-.td-form-group input:focus {
+.td-form-group input:hover:not(:disabled),
+.td-form-group select:hover:not(:disabled) {
+  border-color: #c7c3e5;
+}
+
+.td-form-group input:focus,
+.td-form-group select:focus {
   background: #fff;
   border-color: #6557e8;
   box-shadow: 0 0 0 3px rgb(101 87 232 / 12%);
 }
 
-.td-attendance-form .td-primary-btn {
-  margin-top: 5px;
+.td-form-group input:disabled,
+.td-form-group select:disabled {
+  background: #f2f2f7;
+  cursor: not-allowed;
+  opacity: 0.7;
 }
 
+.td-form-group input[type='date'],
+.td-form-group input[type='time'] {
+  min-height: 47px;
+}
+
+/* ========================================
+   Sections
+======================================== */
+
+.td-form-help {
+  margin: 0;
+  color: #77798e;
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.td-section-input-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.td-section-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+.td-section-input-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.td-section-remove-btn {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  padding: 0;
+  color: #c24152;
+  background: #fff5f6;
+  border: 1px solid #f3d5d9;
+  border-radius: 11px;
+}
+
+.td-section-remove-btn:hover:not(:disabled) {
+  color: #a91f35;
+  background: #ffe9ec;
+  border-color: #eebbc3;
+}
+
+.td-add-section-btn {
+  align-self: flex-start;
+  min-height: 40px;
+  margin-top: 3px;
+  padding: 9px 13px;
+  color: #5140d8;
+  background: #f6f4ff;
+  border: 1px solid #e2defd;
+  border-radius: 10px;
+}
+
+.td-add-section-btn:hover:not(:disabled) {
+  background: #ece9ff;
+  border-color: #c9c1fa;
+}
+
+/* ========================================
+   Location
+======================================== */
+
+.td-form-group .td-secondary-btn {
+  align-self: flex-start;
+  max-width: 100%;
+}
+
+.td-form-group .td-secondary-btn svg {
+  color: currentColor;
+}
+
+.td-form-group [role='status'] {
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
+/* ========================================
+   Error Message
+======================================== */
+
+.td-form-error {
+  padding: 13px 15px;
+  color: #a92738;
+  background: #fff2f3;
+  border: 1px solid #f5cbd1;
+  border-radius: 11px;
+  font-size: 13px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+/* ========================================
+   Submit Button
+======================================== */
+
+.td-attendance-form > .td-form-full:last-child {
+  margin-top: 3px;
+}
+
+.td-attendance-form .td-primary-btn {
+  margin-top: 0;
+}
+
+.td-primary-btn:disabled {
+  opacity: 0.75;
+}
+
+.td-primary-btn:disabled svg {
+  animation: td-attendance-spin 1s linear infinite;
+}
+
+@keyframes td-attendance-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Respect reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  .td-secondary-btn,
+  .td-primary-btn,
+  .td-add-section-btn,
+  .td-section-remove-btn,
+  .td-form-group input,
+  .td-form-group select {
+    transition: none;
+  }
+
+  .td-primary-btn:disabled svg {
+    animation-duration: 2s;
+  }
+}
+
+/* ========================================
+   Placeholder / Empty State
+   Used if the JSX renders .td-placeholder
+======================================== */
+
 .td-placeholder {
+  width: 100%;
+  min-width: 0;
   padding: 30px;
   background: #fff;
   border: 1px solid #e9e8f3;
   border-radius: 18px;
+  box-shadow: 0 8px 28px rgb(36 31 86 / 4%);
 }
 
 .td-placeholder h2 {
@@ -169,6 +430,10 @@
   line-height: 1.7;
 }
 
+/* ========================================
+   Tablet
+======================================== */
+
 @media (max-width: 760px) {
   .td-page-heading {
     flex-direction: column;
@@ -181,23 +446,93 @@
   }
 
   .td-attendance-form-card {
-    padding: 22px 18px;
-    border-radius: 16px;
+    max-width: 100%;
+    padding: 24px 22px;
+    border-radius: 17px;
+  }
+
+  .td-attendance-form {
+    gap: 19px 16px;
   }
 }
 
-@media (max-width: 420px) {
+/* ========================================
+   Mobile
+======================================== */
+
+@media (max-width: 540px) {
+  .td-page-heading {
+    margin-bottom: 21px;
+  }
+
   .td-page-heading h1 {
-    font-size: 25px;
+    font-size: 27px;
+  }
+
+  .td-page-heading p {
+    font-size: 13px;
+  }
+
+  .td-attendance-form {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+  }
+
+  .td-form-full {
+    grid-column: 1;
   }
 
   .td-attendance-form-card {
-    padding: 18px 14px;
+    padding: 21px 17px;
+    border-radius: 15px;
+  }
+
+  .td-attendance-form-card h2 {
+    font-size: 19px;
+  }
+
+  .td-form-description {
+    margin-bottom: 21px;
+  }
+
+  .td-form-group input,
+  .td-form-group select {
+    min-height: 46px;
+    font-size: 14px;
+  }
+}
+
+/* ========================================
+   Small Mobile
+======================================== */
+
+@media (max-width: 380px) {
+  .td-page-heading h1 {
+    font-size: 24px;
+  }
+
+  .td-attendance-form-card {
+    padding: 18px 13px;
   }
 
   .td-secondary-btn,
   .td-primary-btn {
     min-height: 42px;
-    padding: 10px 15px;
+    padding: 10px 13px;
+    font-size: 12px;
+  }
+
+  .td-section-input-row {
+    gap: 7px;
+  }
+
+  .td-section-remove-btn {
+    width: 40px;
+    height: 44px;
+  }
+
+  .td-add-section-btn {
+    max-width: 100%;
+    font-size: 12px;
   }
 }
