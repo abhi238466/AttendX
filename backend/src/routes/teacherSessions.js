@@ -50,6 +50,24 @@ const createSessionSchema = z.object({
     .max(MAX_SESSION_DURATION_MINUTES),
 })
 
+const updateSessionSchema = z
+  .object({
+    courseName: z.string().trim().min(2).max(150).optional(),
+    subjectName: z.string().trim().min(1).max(150).optional(),
+    className: z.string().trim().max(100).optional(),
+    roomName: z.string().trim().max(100).optional(),
+    scheduledStartsAt: z.string().datetime({ offset: true }).optional(),
+    scheduledEndsAt: z.string().datetime({ offset: true }).optional(),
+    sections: z
+      .array(z.string().trim().min(1).max(50))
+      .min(1)
+      .max(30)
+      .optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: 'Provide at least one session field to update.',
+  })
+
 const tokenRotationLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 10,
@@ -397,7 +415,48 @@ router.get('/', requireTeacher, async (req, res, next) => {
   }
 })
 
-// POST /api/teacher/sessions/:sessionId/tokens/rotate
+// GET /api/teacher/sessions/history
+// Return attendance history for the authenticated teacher only.
+router.get('/history', requireTeacher, async (req, res, next) => {
+  try {
+    const sessions = await prisma.attendanceSession.findMany({
+      where: {
+        teacherId: req.teacher.id,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      take: 100,
+      include: {
+        records: {
+          orderBy: {
+            submittedAt: 'desc',
+          },
+          select: {
+            id: true,
+            fullName: true,
+            classRollNumber: true,
+            universityRollNumber: true,
+            section: true,
+            status: true,
+            submittedAt: true,
+          },
+        },
+      },
+    })
+
+    return res.json({
+      sessions: sessions.map((session) => ({
+        ...sessionResponse(session),
+        records: session.records,
+      })),
+    })
+  } catch (error) {
+    return next(error)
+  }
+})
+
+// // POST /api/teacher/sessions/:sessionId/tokens/rotate
 // Create a QR token and a text code valid for at most 50 seconds.
 // Previous unexpired tokens for this session are revoked atomically.
 router.post(
@@ -803,5 +862,247 @@ router.patch(
     }
   }
 )
+
+
+// PATCH /api/teacher/sessions/:sessionId
+// Update editable metadata for a session owned by the authenticated teacher.
+// Location, status, timer, tokens and attendance records are intentionally not editable here.
+router.patch('/:sessionId', requireTeacher, async (req, res, next) => {
+  try {
+    const sessionId = parseSessionId(req.params.sessionId)
+
+    if (!sessionId) {
+      return res.status(400).json({
+        error: 'Invalid session ID.',
+      })
+    }
+
+    const parsed = updateSessionSchema.safeParse(req.body)
+
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: 'Invalid session details.',
+        details: parsed.error.issues.map((issue) => ({
+          field: issue.path.join('.'),
+          message: issue.message,
+        })),
+      })
+    }
+
+    const input = parsed.data
+    const result = await prisma.$transaction(async (tx) => {
+      // Lock the session row so concurrent updates/deletion cannot race.
+      await tx.$queryRaw`
+        SELECT id
+        FROM "AttendanceSession"
+        WHERE id = ${sessionId}::uuid
+        FOR UPDATE
+      `
+
+      const currentSession = await tx.attendanceSession.findFirst({
+        where: {
+          id: sessionId,
+          teacherId: req.teacher.id,
+        },
+      })
+
+      if (!currentSession) {
+        return { notFound: true }
+      }
+
+      const sections =
+        input.sections === undefined
+          ? undefined
+          : normalizeSections(input.sections)
+
+      if (input.sections !== undefined && !sections) {
+        return { duplicateSections: true }
+      }
+
+      const scheduledStartsAt =
+        input.scheduledStartsAt === undefined
+          ? currentSession.scheduledStartsAt
+          : new Date(input.scheduledStartsAt)
+
+      const scheduledEndsAt =
+        input.scheduledEndsAt === undefined
+          ? currentSession.scheduledEndsAt
+          : new Date(input.scheduledEndsAt)
+
+      if (
+        Number.isNaN(scheduledStartsAt.getTime()) ||
+        Number.isNaN(scheduledEndsAt.getTime()) ||
+        scheduledEndsAt <= scheduledStartsAt
+      ) {
+        return { invalidSchedule: true }
+      }
+
+      const data = {}
+
+      if (input.courseName !== undefined) data.courseName = input.courseName
+      if (input.subjectName !== undefined) data.subjectName = input.subjectName
+      if (input.className !== undefined) {
+        data.className = input.className.trim() || null
+      }
+      if (input.roomName !== undefined) {
+        data.roomName = input.roomName.trim() || null
+      }
+      if (input.scheduledStartsAt !== undefined) {
+        data.scheduledStartsAt = scheduledStartsAt
+      }
+      if (input.scheduledEndsAt !== undefined) {
+        data.scheduledEndsAt = scheduledEndsAt
+      }
+      if (sections !== undefined) data.sections = sections
+
+      const updatedSession = await tx.attendanceSession.update({
+        where: { id: currentSession.id },
+        data,
+      })
+
+      await tx.auditLog.create({
+        data: {
+          actorType: 'TEACHER',
+          actorId: req.teacher.id,
+          action: 'ATTENDANCE_SESSION_UPDATED',
+          entityType: 'AttendanceSession',
+          entityId: updatedSession.id,
+          metadata: {
+            updatedFields: Object.keys(data),
+          },
+        },
+      })
+
+      return { session: updatedSession }
+    })
+
+    if (result.notFound) {
+      return res.status(404).json({
+        error: 'Session not found.',
+      })
+    }
+
+    if (result.duplicateSections) {
+      return res.status(400).json({
+        error: 'Duplicate sections are not allowed.',
+      })
+    }
+
+    if (result.invalidSchedule) {
+      return res.status(400).json({
+        error: 'Class end time must be later than class start time.',
+      })
+    }
+
+    return res.json({
+      message: 'Attendance session updated successfully.',
+      session: sessionResponse(result.session),
+    })
+  } catch (error) {
+    return next(error)
+  }
+})
+
+// DELETE /api/teacher/sessions/:sessionId
+// Permanently delete only this teacher's session and its session-scoped data.
+router.delete('/:sessionId', requireTeacher, async (req, res, next) => {
+  try {
+    const sessionId = parseSessionId(req.params.sessionId)
+
+    if (!sessionId) {
+      return res.status(400).json({
+        error: 'Invalid session ID.',
+      })
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      // Serialize deletion against attendance submission, token rotation and closure.
+      await tx.$queryRaw`
+        SELECT id
+        FROM "AttendanceSession"
+        WHERE id = ${sessionId}::uuid
+        FOR UPDATE
+      `
+
+      const attendanceSession = await tx.attendanceSession.findFirst({
+        where: {
+          id: sessionId,
+          teacherId: req.teacher.id,
+        },
+        select: {
+          id: true,
+          courseName: true,
+          subjectName: true,
+          className: true,
+          roomName: true,
+          sections: true,
+        },
+      })
+
+      if (!attendanceSession) {
+        return { notFound: true }
+      }
+
+      // Keep an audit trail while removing the session's operational data.
+      await tx.auditLog.create({
+        data: {
+          actorType: 'TEACHER',
+          actorId: req.teacher.id,
+          action: 'ATTENDANCE_SESSION_DELETED',
+          entityType: 'AttendanceSession',
+          entityId: attendanceSession.id,
+          metadata: {
+            courseName: attendanceSession.courseName,
+            subjectName: attendanceSession.subjectName,
+            className: attendanceSession.className,
+            roomName: attendanceSession.roomName,
+            sections: attendanceSession.sections,
+          },
+        },
+      })
+
+      // AttendanceRecord uses onDelete: Restrict, so remove dependent rows first.
+      await tx.attendanceRecord.deleteMany({
+        where: { attendanceSessionId: attendanceSession.id },
+      })
+
+      await tx.qrCodeToken.deleteMany({
+        where: { attendanceSessionId: attendanceSession.id },
+      })
+
+      await tx.attendanceAttempt.deleteMany({
+        where: { attendanceSessionId: attendanceSession.id },
+      })
+
+      await tx.attendanceChallenge.deleteMany({
+        where: { attendanceSessionId: attendanceSession.id },
+      })
+
+      await tx.attendanceDeviceLock.deleteMany({
+        where: { attendanceSessionId: attendanceSession.id },
+      })
+
+      await tx.attendanceSession.delete({
+        where: { id: attendanceSession.id },
+      })
+
+      return { deleted: true }
+    })
+
+    if (result.notFound) {
+      return res.status(404).json({
+        error: 'Session not found.',
+      })
+    }
+
+    return res.json({
+      message: 'Attendance session and its related data were deleted successfully.',
+      sessionId,
+    })
+  } catch (error) {
+    return next(error)
+  }
+})
+
 
 export default router

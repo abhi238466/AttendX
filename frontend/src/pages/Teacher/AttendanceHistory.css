@@ -79,3 +79,1013 @@
     padding: 20px 14px;
   }
 }
+/*
+ * AttendX Attendance History responsive styles.
+ * Safe add-on: append this entire block to the END of your existing
+ * src/pages/Teacher/AttendanceHistory.css. It does not replace old CSS.
+ */
+
+.td-history-page {
+  min-width: 0;
+  width: 100%;
+  color: #17233f;
+}
+
+.td-history-page,
+.td-history-page * {
+  box-sizing: border-box;
+}
+
+.td-history-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 20px;
+}
+
+.td-history-heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.td-history-heading-actions button,
+.td-history-session-footer button,
+.td-history-modal-actions button,
+.td-history-state button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.td-history-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  min-width: 0;
+}
+
+.td-history-session-card {
+  min-width: 0;
+  padding: 18px;
+  background: #fff;
+  border: 1px solid #e1e7f1;
+  border-radius: 16px;
+  box-shadow: 0 5px 20px rgb(30 52 90 / 5%);
+}
+
+.td-history-session-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.td-history-session-top h2 {
+  margin: 5px 0 4px;
+  color: #111d38;
+  font-size: clamp(18px, 1.6vw, 23px);
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.td-history-session-number {
+  margin: 0;
+  color: #65738d;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .035em;
+}
+
+.td-history-teacher-line {
+  margin: 0;
+  color: #5d6d87;
+  font-size: 13px;
+}
+
+.td-history-session-meta {
+  display: flex;
+  flex: 0 1 250px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  color: #62718b;
+  font-size: 11px;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.td-history-id {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.td-history-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.td-history-status.is-closed {
+  color: #08783c;
+  background: #d9fbe5;
+}
+
+.td-history-status.is-active {
+  color: #9a5a00;
+  background: #fff0c2;
+}
+
+.td-history-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 145px), 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.td-history-info-tile {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  min-height: 66px;
+  padding: 12px 10px;
+  background: #f7faff;
+  border: 1px solid #edf1f8;
+  border-radius: 10px;
+}
+
+.td-history-info-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: #1264ed;
+}
+
+.td-history-info-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.td-history-info-copy > span {
+  color: #62718a;
+  font-size: 11px;
+}
+
+.td-history-info-copy strong {
+  color: #17233c;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.td-history-info-copy small {
+  color: #66758d;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.td-history-register-grid,
+.td-history-erp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 350px), 1fr));
+  align-items: start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.td-history-register-grid.has-one-section,
+.td-history-erp-grid.has-one-section {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.td-history-section {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #dfe6f1;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.td-history-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 13px;
+  border-bottom: 1px solid #edf1f6;
+}
+
+.td-history-section-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.td-history-section-title > svg {
+  flex: 0 0 auto;
+  color: #1264ed;
+}
+
+.td-history-section-title h3 {
+  margin: 0 0 3px;
+  color: #17233f;
+  font-size: 14px;
+}
+
+.td-history-section-title p {
+  margin: 0;
+  color: #65738c;
+  font-size: 12px;
+}
+
+.td-history-add-inline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  color: #075be5;
+  background: #f1f6ff;
+  border: 1px solid #cfe0ff;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.td-history-add-inline:hover {
+  background: #e5efff;
+}
+
+.td-history-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.td-history-table {
+  width: 100%;
+  min-width: 520px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.td-history-table th,
+.td-history-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid #edf1f6;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.td-history-table th {
+  color: #33425e;
+  background: #f8faff;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.td-history-table td {
+  color: #1b2942;
+}
+
+.td-history-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.td-history-table tbody tr:hover {
+  background: #fafcff;
+}
+
+.td-history-present-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 9px;
+  color: #08783c;
+  background: #d9fbe5;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.td-history-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.td-history-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: #26364f;
+  background: #fff;
+  border: 1px solid #e0e6f0;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.td-history-icon-btn:hover {
+  color: #075be5;
+  background: #f1f6ff;
+}
+
+.td-history-icon-btn.is-danger {
+  color: #dc2626;
+}
+
+.td-history-icon-btn.is-danger:hover {
+  background: #fff1f1;
+  border-color: #ffcaca;
+}
+
+.td-history-empty-section {
+  padding: 22px 14px;
+  color: #6b7890;
+  font-size: 12px;
+  text-align: center;
+}
+
+.td-history-erp {
+  margin-top: 12px;
+  padding: 14px;
+  background: #f0f7ff;
+  border: 1px solid #c9e1ff;
+  border-radius: 12px;
+}
+
+.td-history-erp-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.td-history-erp-heading > svg {
+  flex: 0 0 auto;
+  color: #1264ed;
+}
+
+.td-history-erp-heading h3 {
+  margin: 0 0 4px;
+  color: #17233f;
+  font-size: 14px;
+}
+
+.td-history-erp-heading p {
+  margin: 0;
+  color: #63728b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.td-history-erp-section {
+  min-width: 0;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid #cfe2ff;
+  border-radius: 10px;
+}
+
+.td-history-erp-section h4 {
+  margin: 0 0 8px;
+  color: #1a2943;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.td-history-roll-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.td-history-roll-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  min-height: 32px;
+  padding: 5px 10px;
+  color: #08783c;
+  background: #d9fbe5;
+  border-radius: 9px;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.td-history-total {
+  margin: 8px 0 0;
+  color: #65738b;
+  font-size: 11px;
+}
+
+.td-history-no-rolls {
+  margin: 0;
+  color: #6b7890;
+  font-size: 12px;
+}
+
+.td-history-total-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.td-history-session-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.td-history-session-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.td-history-add-btn,
+.td-history-edit-session-btn,
+.td-history-delete-session-btn {
+  min-height: 38px;
+  padding: 8px 12px;
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.td-history-add-btn {
+  color: #075be5;
+  background: #fff;
+  border: 1px solid #1264ed;
+}
+
+.td-history-add-btn:hover {
+  background: #f1f6ff;
+}
+
+.td-history-edit-session-btn {
+  color: #26364f;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+}
+
+.td-history-edit-session-btn:hover {
+  background: #f8fafc;
+}
+
+.td-history-delete-session-btn {
+  color: #dc2626;
+  background: #fff;
+  border: 1px solid #ef4444;
+}
+
+.td-history-delete-session-btn:hover {
+  background: #fff1f1;
+}
+
+.td-history-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 11px 13px;
+  margin-bottom: 12px;
+  border: 1px solid;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.td-history-alert > span {
+  flex: 1;
+}
+
+.td-history-alert button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.td-history-alert-success {
+  color: #08783c;
+  background: #effdf4;
+  border-color: #b8efcb;
+}
+
+.td-history-alert-error {
+  color: #a51f1f;
+  background: #fff4f4;
+  border-color: #ffcaca;
+}
+
+.td-history-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 250px;
+  padding: 28px 16px;
+  color: #65738b;
+  background: #fff;
+  border: 1px dashed #d6dfec;
+  border-radius: 14px;
+  text-align: center;
+}
+
+.td-history-state > svg {
+  color: #1264ed;
+}
+
+.td-history-state h2 {
+  margin: 0;
+  color: #17233f;
+  font-size: 18px;
+}
+
+.td-history-state p {
+  max-width: 430px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.td-history-spin {
+  animation: td-history-spin 1s linear infinite;
+}
+
+@keyframes td-history-spin {
+  to { transform: rotate(360deg); }
+}
+
+.td-history-modal-backdrop {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgb(10 22 42 / 55%);
+  overflow-y: auto;
+}
+
+.td-history-modal {
+  width: min(100%, 540px);
+  max-height: min(90vh, 760px);
+  overflow-y: auto;
+  padding: 22px;
+  background: #fff;
+  border: 1px solid #e1e7f1;
+  border-radius: 16px;
+  box-shadow: 0 20px 70px rgb(5 15 35 / 24%);
+}
+
+.td-history-modal-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.td-history-modal-heading h2 {
+  margin: 4px 0;
+  color: #17233f;
+  font-size: 21px;
+}
+
+.td-history-modal-heading p:last-child {
+  margin: 0;
+  color: #65738b;
+  font-size: 13px;
+}
+
+.td-history-modal-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  color: #52627b;
+  background: #f7faff;
+  border: 1px solid #e1e7f1;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.td-history-form {
+  display: grid;
+  gap: 14px;
+}
+
+.td-history-form label {
+  display: grid;
+  gap: 6px;
+  color: #34425c;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.td-history-form input,
+.td-history-form select {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 10px 11px;
+  color: #17233f;
+  background: #fff;
+  border: 1px solid #cfd8e6;
+  border-radius: 8px;
+  outline: none;
+  font: inherit;
+  font-size: 13px;
+}
+
+.td-history-form input:focus,
+.td-history-form select:focus {
+  border-color: #1264ed;
+  box-shadow: 0 0 0 3px rgb(18 100 237 / 12%);
+}
+
+.td-history-form-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.td-history-form-error {
+  margin: 0;
+  padding: 9px 10px;
+  color: #a51f1f;
+  background: #fff4f4;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.td-history-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+@media (min-width: 1500px) {
+  .td-history-register-grid,
+  .td-history-erp-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .td-history-register-grid.has-one-section,
+  .td-history-erp-grid.has-one-section {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .td-history-session-card {
+    padding: 14px;
+  }
+
+  .td-history-info-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .td-history-register-grid,
+  .td-history-erp-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .td-history-register-grid.has-one-section,
+  .td-history-erp-grid.has-one-section {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .td-history-heading {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .td-history-heading-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .td-history-heading-actions button {
+    flex: 1 1 auto;
+    min-height: 40px;
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+
+  .td-history-session-card {
+    padding: 12px;
+    border-radius: 13px;
+  }
+
+  .td-history-session-top {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .td-history-session-meta {
+    flex: auto;
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  .td-history-info-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+  }
+
+  .td-history-info-tile {
+    min-height: 62px;
+    padding: 9px 8px;
+    gap: 7px;
+  }
+
+  .td-history-info-icon svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .td-history-info-copy > span {
+    font-size: 10px;
+  }
+
+  .td-history-info-copy strong {
+    font-size: 11px;
+  }
+
+  .td-history-register-grid,
+  .td-history-erp-grid,
+  .td-history-register-grid.has-one-section,
+  .td-history-erp-grid.has-one-section {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .td-history-erp {
+    padding: 10px;
+  }
+
+  .td-history-session-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .td-history-add-btn {
+    width: 100%;
+  }
+
+  .td-history-session-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .td-history-session-actions button {
+    width: 100%;
+    min-height: 40px;
+    padding: 8px 6px;
+    font-size: 11px;
+  }
+
+  .td-history-table {
+    min-width: 520px;
+  }
+
+  .td-history-modal-backdrop {
+    align-items: flex-end;
+    padding: 8px;
+  }
+
+  .td-history-modal {
+    width: 100%;
+    max-height: 88vh;
+    padding: 17px;
+    border-radius: 16px 16px 10px 10px;
+  }
+
+  .td-history-form-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  .td-history-modal-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .td-history-modal-actions button {
+    width: 100%;
+    min-height: 42px;
+  }
+}
+
+@media (max-width: 380px) {
+  .td-history-info-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .td-history-session-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/*
+ * Final responsive grid adjustment.
+ * Keeps the original stylesheet intact while preventing 4-section sessions
+ * from forcing narrow register tables on wide screens.
+ */
+@media (min-width: 1500px) {
+  .td-history-register-grid,
+  .td-history-erp-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 350px), 1fr));
+  }
+
+  .td-history-register-grid.has-one-section,
+  .td-history-erp-grid.has-one-section {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Keep cards and tables usable on small tablets and phones. */
+@media (max-width: 640px) {
+  .td-history-page {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .td-history-session-card,
+  .td-history-section,
+  .td-history-erp,
+  .td-history-erp-section {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .td-history-session-top h2,
+  .td-history-id,
+  .td-history-info-copy strong {
+    overflow-wrap: anywhere;
+    word-break: normal;
+  }
+
+  .td-history-table-wrap {
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .td-history-table {
+    min-width: 520px;
+  }
+}
+
+/* Extra-small phones: avoid squeezing action buttons and metadata tiles. */
+@media (max-width: 380px) {
+  .td-history-heading-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .td-history-heading-actions button {
+    width: 100%;
+  }
+
+  .td-history-info-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .td-history-session-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+
+/* AttendX History: fixed toast notifications and in-app delete confirmation. */
+.td-history-toast-stack {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 1200;
+  display: grid;
+  gap: 10px;
+  width: min(420px, calc(100vw - 36px));
+  pointer-events: none;
+}
+
+.td-history-toast-stack .td-history-alert {
+  margin: 0;
+  pointer-events: auto;
+  box-shadow: 0 12px 32px rgb(15 23 42 / 18%);
+  animation: td-history-toast-in 180ms ease-out;
+}
+
+.td-history-toast-stack .td-history-alert-success,
+.td-history-toast-stack .td-history-alert-error {
+  border-radius: 12px;
+}
+
+.td-history-confirm-backdrop {
+  z-index: 1250;
+}
+
+.td-history-confirm-modal {
+  width: min(100%, 480px);
+}
+
+.td-history-confirm-message {
+  margin: 0 0 20px;
+  color: #53627a;
+  font-size: 14px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.td-history-confirm-modal .td-history-modal-actions {
+  margin-top: 18px;
+}
+
+.td-history-confirm-modal .td-history-delete-session-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.td-history-confirm-modal button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+@keyframes td-history-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 640px) {
+  .td-history-toast-stack {
+    top: 10px;
+    right: 10px;
+    width: calc(100vw - 20px);
+  }
+}
+
+
+/* Final toast positioning refinement: keep notifications visible on desktop and mobile. */
+.td-history-toast-stack {
+  top: max(18px, env(safe-area-inset-top));
+  right: max(18px, env(safe-area-inset-right));
+  max-width: calc(100vw - 36px);
+}
+
+@media (max-width: 640px) {
+  .td-history-toast-stack {
+    top: max(10px, env(safe-area-inset-top));
+    right: max(10px, env(safe-area-inset-right));
+    width: calc(100vw - 20px);
+    max-width: calc(100vw - 20px);
+  }
+}

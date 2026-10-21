@@ -10,6 +10,7 @@ import {
   calculateDistanceMeters,
   isWithinRadius,
 } from '../utils/haversine.js'
+import { requireTeacher } from '../teacherAuth.js'
 
 const router = Router()
 
@@ -810,5 +811,357 @@ router.post(
     }
   }
 )
+
+
+// Teacher-only manual attendance management.
+// These routes are mounted under /api/attendance, but require the teacher session.
+const manualAttendanceSchema = z.object({
+  attendanceSessionId: z.string().uuid(),
+  fullName: z.string().trim().min(2).max(120),
+  classRollNumber: z.string().trim().min(1).max(50),
+  universityRollNumber: z.string().trim().min(1).max(80),
+  section: z.string().trim().min(1).max(50),
+})
+
+const manualAttendanceUpdateSchema = z.object({
+  fullName: z.string().trim().min(2).max(120).optional(),
+  classRollNumber: z.string().trim().min(1).max(50).optional(),
+  universityRollNumber: z.string().trim().min(1).max(80).optional(),
+  section: z.string().trim().min(1).max(50).optional(),
+  status: z.enum(['PRESENT', 'REJECTED']).optional(),
+}).refine(
+  (data) => Object.keys(data).length > 0,
+  { message: 'Provide at least one field to update.' }
+)
+
+// POST /api/attendance/manual
+// Add a teacher-entered attendance record to a session owned by that teacher.
+router.post('/manual', requireTeacher, async (req, res, next) => {
+  const parsed = manualAttendanceSchema.safeParse(req.body)
+
+  if (!parsed.success) {
+    return res.status(400).json({
+      success: false,
+      message: 'Please provide valid student details.',
+      details: parsed.error.issues.map((issue) => ({
+        field: issue.path.join('.'),
+        message: issue.message,
+      })),
+    })
+  }
+
+  const data = parsed.data
+  const normalizedUniversityRollNumber = normalizeRollNumber(
+    data.universityRollNumber
+  )
+  const normalizedSection = normalizeSection(data.section)
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`
+        SELECT id
+        FROM "AttendanceSession"
+        WHERE id = ${data.attendanceSessionId}::uuid
+        FOR UPDATE
+      `
+
+      const session = await tx.attendanceSession.findFirst({
+        where: {
+          id: data.attendanceSessionId,
+          teacherId: req.teacher.id,
+        },
+        select: { id: true, sections: true },
+      })
+
+      if (!session) return { notFound: true }
+
+      if (!session.sections.some(
+        (section) => normalizeSection(section) === normalizedSection
+      )) {
+        return { invalidSection: true }
+      }
+
+      const record = await tx.attendanceRecord.create({
+        data: {
+          attendanceSessionId: session.id,
+          fullName: data.fullName,
+          classRollNumber: data.classRollNumber,
+          universityRollNumber: data.universityRollNumber,
+          normalizedUniversityRollNumber,
+          section: normalizedSection,
+          status: 'PRESENT',
+        },
+        select: {
+          id: true,
+          attendanceSessionId: true,
+          fullName: true,
+          classRollNumber: true,
+          universityRollNumber: true,
+          section: true,
+          status: true,
+          submittedAt: true,
+        },
+      })
+
+      await tx.auditLog.create({
+        data: {
+          actorType: 'TEACHER',
+          actorId: req.teacher.id,
+          action: 'ATTENDANCE_RECORD_MANUALLY_ADDED',
+          entityType: 'AttendanceRecord',
+          entityId: record.id,
+          metadata: {
+            attendanceSessionId: session.id,
+            section: normalizedSection,
+            source: 'TEACHER_MANUAL_ENTRY',
+          },
+        },
+      })
+
+      return { record }
+    })
+
+    if (result.notFound) return fail(res, 404, 'Session not found.')
+    if (result.invalidSection) {
+      return fail(res, 400, 'The selected section is not part of this session.')
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: 'Student attendance added successfully.',
+      attendance: result.record,
+    })
+  } catch (error) {
+    if (error?.code === 'P2002') {
+      return fail(res, 409,
+        'Attendance already exists for this university roll number in this session.')
+    }
+    return next(error)
+  }
+})
+
+// PATCH /api/attendance/records/:recordId/manual
+// Edit only a record belonging to a session owned by the authenticated teacher.
+router.patch('/records/:recordId/manual', requireTeacher, async (req, res, next) => {
+  const recordId = z.string().uuid().safeParse(req.params.recordId)
+  const parsed = manualAttendanceUpdateSchema.safeParse(req.body)
+
+  if (!recordId.success || !parsed.success) {
+    return res.status(400).json({
+      success: false,
+      message: 'Please provide a valid record ID and update details.',
+      details: parsed.success ? undefined : parsed.error.issues.map((issue) => ({
+        field: issue.path.join('.'),
+        message: issue.message,
+      })),
+    })
+  }
+
+  const data = parsed.data
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const existingRecord = await tx.attendanceRecord.findFirst({
+        where: {
+          id: recordId.data,
+          attendanceSession: { teacherId: req.teacher.id },
+        },
+        select: {
+          id: true,
+          attendanceSessionId: true,
+          section: true,
+          fullName: true,
+          classRollNumber: true,
+          universityRollNumber: true,
+        },
+      })
+
+      if (!existingRecord) return { notFound: true }
+
+      await tx.$queryRaw`
+        SELECT id
+        FROM "AttendanceSession"
+        WHERE id = ${existingRecord.attendanceSessionId}::uuid
+        FOR UPDATE
+      `
+
+      const session = await tx.attendanceSession.findFirst({
+        where: {
+          id: existingRecord.attendanceSessionId,
+          teacherId: req.teacher.id,
+        },
+        select: { id: true, sections: true },
+      })
+
+      if (!session) return { notFound: true }
+
+      const nextSection = data.section
+        ? normalizeSection(data.section)
+        : normalizeSection(existingRecord.section)
+
+      if (!session.sections.some(
+        (section) => normalizeSection(section) === nextSection
+      )) {
+        return { invalidSection: true }
+      }
+
+      const nextUniversityRollNumber =
+        data.universityRollNumber ?? existingRecord.universityRollNumber
+
+      const updateData = {
+        ...(data.fullName !== undefined ? { fullName: data.fullName } : {}),
+        ...(data.classRollNumber !== undefined
+          ? { classRollNumber: data.classRollNumber }
+          : {}),
+        ...(data.universityRollNumber !== undefined ? {
+          universityRollNumber: data.universityRollNumber,
+          normalizedUniversityRollNumber: normalizeRollNumber(nextUniversityRollNumber),
+        } : {}),
+        ...(data.section !== undefined ? { section: nextSection } : {}),
+        ...(data.status !== undefined ? {
+          status: data.status,
+          correctionReason: 'Updated by the authenticated teacher.',
+          correctedByTeacherId: req.teacher.id,
+          correctedAt: new Date(),
+        } : {}),
+      }
+
+      const record = await tx.attendanceRecord.update({
+        where: { id: existingRecord.id },
+        data: updateData,
+        select: {
+          id: true,
+          attendanceSessionId: true,
+          fullName: true,
+          classRollNumber: true,
+          universityRollNumber: true,
+          section: true,
+          status: true,
+          submittedAt: true,
+          updatedAt: true,
+          correctionReason: true,
+          correctedAt: true,
+        },
+      })
+
+      await tx.auditLog.create({
+        data: {
+          actorType: 'TEACHER',
+          actorId: req.teacher.id,
+          action: 'ATTENDANCE_RECORD_MANUALLY_UPDATED',
+          entityType: 'AttendanceRecord',
+          entityId: record.id,
+          metadata: {
+            attendanceSessionId: session.id,
+            changedFields: Object.keys(data),
+          },
+        },
+      })
+
+      return { record }
+    })
+
+    if (result.notFound) return fail(res, 404, 'Attendance record not found.')
+    if (result.invalidSection) {
+      return fail(res, 400, 'The selected section is not part of this session.')
+    }
+
+    return res.json({
+      success: true,
+      message: 'Attendance record updated successfully.',
+      attendance: result.record,
+    })
+  } catch (error) {
+    if (error?.code === 'P2002') {
+      return fail(res, 409,
+        'Attendance already exists for this university roll number in this session.')
+    }
+    return next(error)
+  }
+})
+
+
+
+// DELETE /api/attendance/records/:recordId/manual
+// Delete only a record belonging to a session owned by the authenticated teacher.
+router.delete('/records/:recordId/manual', requireTeacher, async (req, res, next) => {
+  const recordId = z.string().uuid().safeParse(req.params.recordId)
+
+  if (!recordId.success) {
+    return fail(res, 400, 'Please provide a valid attendance record ID.')
+  }
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const existingRecord = await tx.attendanceRecord.findFirst({
+        where: {
+          id: recordId.data,
+          attendanceSession: { teacherId: req.teacher.id },
+        },
+        select: {
+          id: true,
+          attendanceSessionId: true,
+          fullName: true,
+          classRollNumber: true,
+          universityRollNumber: true,
+          section: true,
+        },
+      })
+
+      if (!existingRecord) return { notFound: true }
+
+      await tx.$queryRaw`
+        SELECT id
+        FROM "AttendanceSession"
+        WHERE id = ${existingRecord.attendanceSessionId}::uuid
+        FOR UPDATE
+      `
+
+      const session = await tx.attendanceSession.findFirst({
+        where: {
+          id: existingRecord.attendanceSessionId,
+          teacherId: req.teacher.id,
+        },
+        select: { id: true },
+      })
+
+      if (!session) return { notFound: true }
+
+      await tx.attendanceRecord.delete({
+        where: { id: existingRecord.id },
+      })
+
+      await tx.auditLog.create({
+        data: {
+          actorType: 'TEACHER',
+          actorId: req.teacher.id,
+          action: 'ATTENDANCE_RECORD_MANUALLY_DELETED',
+          entityType: 'AttendanceRecord',
+          entityId: existingRecord.id,
+          metadata: {
+            attendanceSessionId: session.id,
+            fullName: existingRecord.fullName,
+            classRollNumber: existingRecord.classRollNumber,
+            universityRollNumber: existingRecord.universityRollNumber,
+            section: existingRecord.section,
+          },
+        },
+      })
+
+      return { deleted: true }
+    })
+
+    if (result.notFound) {
+      return fail(res, 404, 'Attendance record not found.')
+    }
+
+    return res.json({
+      success: true,
+      message: 'Attendance record deleted successfully.',
+    })
+  } catch (error) {
+    return next(error)
+  }
+})
 
 export default router

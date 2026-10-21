@@ -74,12 +74,16 @@ app.use(
   teacherSessionsRouter
 )
 
-// Student attendance submission.
-// Students do not need an account or login.
+
+ // Student attendance and teacher-only manual attendance.
+ // Session middleware reads the teacher session cookie.
+ // Public QR/challenge/submit routes remain accessible without login.
 app.use(
   '/api/attendance',
+  teacherSessionMiddleware,
   teacherAttendanceRouter
 )
+
 
 // Basic backend health check.
 app.get('/health', (req, res) => {
