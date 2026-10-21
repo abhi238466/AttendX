@@ -18,7 +18,7 @@ const API_BASE_URL = (
   import.meta.env.VITE_API_URL ||
   ''
 ).replace(/\/$/, '')
-const TOKEN_REFRESH_SECONDS = 10
+const TOKEN_REFRESH_SECONDS = 50
 
 async function readResponse(response) {
 const result = await response.json().catch(() => ({}))
@@ -41,8 +41,19 @@ if (Number.isNaN(date.getTime())) return '—'
 
 return date.toLocaleString([], {
 dateStyle: 'medium',
-timeStyle: 'short',
+timeStyle: 'medium',
 })
+}
+
+function formatRemainingTime(totalSeconds) {
+  const safeSeconds = Math.max(0, Math.floor(totalSeconds || 0))
+  const hours = Math.floor(safeSeconds / 3600)
+  const minutes = Math.floor((safeSeconds % 3600) / 60)
+  const seconds = safeSeconds % 60
+
+  if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`
+  if (minutes > 0) return `${minutes}m ${seconds}s`
+  return `${seconds}s`
 }
 
 export default function LiveAttendance() {
@@ -52,13 +63,16 @@ const navigate = useNavigate()
 const [session, setSession] = useState(null)
 const [tokenData, setTokenData] = useState(null)
 const [secondsLeft, setSecondsLeft] = useState(0)
+  const [sessionSecondsLeft, setSessionSecondsLeft] = useState(0)
 const [loading, setLoading] = useState(true)
 const [refreshing, setRefreshing] = useState(false)
 const [closing, setClosing] = useState(false)
 const [error, setError] = useState('')
 const [notice, setNotice] = useState('')
 const [closed, setClosed] = useState(false)
+const [showCloseConfirm, setShowCloseConfirm] = useState(false)
 const refreshInFlightRef = useRef(false)
+const autoCloseStartedRef = useRef(false)
 
 const loadSession = useCallback(async () => {
 const result = await readResponse(
@@ -174,6 +188,22 @@ return () => {
 }, [sessionId, loadSession, refreshToken])
 
 useEffect(() => {
+  if (!session?.endsAt) {
+    setSessionSecondsLeft(0)
+    return undefined
+  }
+
+  const updateSessionCountdown = () => {
+    const remainingMs = new Date(session.endsAt).getTime() - Date.now()
+    setSessionSecondsLeft(Math.max(0, Math.ceil(remainingMs / 1000)))
+  }
+
+  updateSessionCountdown()
+  const timer = window.setInterval(updateSessionCountdown, 1000)
+  return () => window.clearInterval(timer)
+}, [session?.endsAt])
+
+useEffect(() => {
 if (!tokenData || closed) return undefined
 
 const countdown = window.setInterval(() => {
@@ -197,15 +227,10 @@ return () => window.clearInterval(refreshTimer)
 
 }, [loading, closed, session, refreshToken])
 
-async function handleCloseSession() {
+async function handleCloseSession(auto = false) {
 if (closing || closed) return
 
-const confirmed = window.confirm(
-  'Close this attendance session? Students will no longer be able to submit attendance using its codes.'
-)
-
-if (!confirmed) return
-
+if (!auto) setShowCloseConfirm(false)
 setClosing(true)
 setError('')
 setNotice('')
@@ -227,7 +252,7 @@ try {
     current ? { ...current, status: 'CLOSED' } : current
   )
   setTokenData(null)
-  setNotice('Attendance session closed successfully.')
+  setNotice(auto ? 'Session time ended. Attendance session closed automatically.' : 'Attendance session closed successfully.')
 } catch (requestError) {
   setError(requestError.message || 'Could not close this session.')
 } finally {
@@ -235,6 +260,24 @@ try {
 }
 
 }
+
+useEffect(() => {
+  if (
+    loading ||
+    closed ||
+    closing ||
+    !session ||
+    session.status !== 'ACTIVE' ||
+    sessionSecondsLeft > 0 ||
+    autoCloseStartedRef.current
+  ) {
+    return undefined
+  }
+
+  autoCloseStartedRef.current = true
+  handleCloseSession(true)
+  return undefined
+}, [loading, closed, closing, session, sessionSecondsLeft])
 
 if (loading) {
 return (
@@ -276,17 +319,22 @@ Back to Dashboard
       </div>
     </header>
 
-    {error && (
-      <div className="la-alert la-alert-error" role="alert">
-        <XCircle size={18} />
-        <span>{error}</span>
-      </div>
-    )}
-
-    {notice && (
-      <div className="la-alert la-alert-success" role="status">
-        <ShieldCheck size={18} />
-        <span>{notice}</span>
+    {(error || notice) && (
+      <div className="la-toast-stack" aria-live="polite" aria-atomic="true">
+        {error && (
+          <div className="la-toast la-toast-error" role="alert">
+            <XCircle size={18} />
+            <span>{error}</span>
+            <button type="button" className="la-toast-dismiss" aria-label="Dismiss error" onClick={() => setError('')}>×</button>
+          </div>
+        )}
+        {notice && (
+          <div className="la-toast la-toast-success" role="status">
+            <ShieldCheck size={18} />
+            <span>{notice}</span>
+            <button type="button" className="la-toast-dismiss" aria-label="Dismiss message" onClick={() => setNotice('')}>×</button>
+          </div>
+        )}
       </div>
     )}
 
@@ -311,9 +359,14 @@ Back to Dashboard
             <Users size={15} />
             {(session.sections || []).join(', ') || 'Sections not listed'}
           </span>
-          <span>
+          <span className="la-session-end-time">
             <Clock3 size={15} />
-            Ends {formatDateTime(session.endsAt)}
+            <span style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+              <span>Ends {formatDateTime(session.endsAt)}</span>
+              <strong className={sessionSecondsLeft <= 60 ? 'is-expiring' : ''}>
+                {closed ? 'Session ended' : `${formatRemainingTime(sessionSecondsLeft)} remaining`}
+              </strong>
+            </span>
           </span>
           <span>
             <MapPin size={15} />
@@ -420,6 +473,26 @@ Back to Dashboard
           </span>
         </div>
 
+        <div className="la-expiry-row la-text-code-expiry-row">
+          <span className="la-expiry-label">
+            <Clock3 size={15} />
+            {closed ? 'Text code expired' : 'Text code refreshes automatically'}
+          </span>
+          {!closed && (
+            <strong className={secondsLeft <= 4 ? 'is-expiring' : ''}>
+              {secondsLeft}s
+            </strong>
+          )}
+        </div>
+        <div className="la-progress-track" aria-hidden="true">
+          <div
+            className="la-progress-value"
+            style={{
+              width: `${closed ? 0 : Math.min(100, (secondsLeft / TOKEN_REFRESH_SECONDS) * 100)}%`,
+            }}
+          />
+        </div>
+
         <button
           type="button"
           className="la-secondary-button"
@@ -442,7 +515,7 @@ Back to Dashboard
         <button
           type="button"
           className="la-close-button"
-          onClick={handleCloseSession}
+          onClick={() => setShowCloseConfirm(true)}
           disabled={closing || closed}
         >
           <XCircle size={17} />
@@ -450,6 +523,24 @@ Back to Dashboard
         </button>
       </section>
     </div>
+
+    {showCloseConfirm && !closed && (
+      <div className="la-confirm-backdrop" role="presentation" onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !closing) setShowCloseConfirm(false)
+      }}>
+        <section className="la-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="la-confirm-title">
+          <span className="la-confirm-icon"><XCircle size={24} /></span>
+          <h2 id="la-confirm-title">Close attendance session?</h2>
+          <p>Students will no longer be able to submit attendance using this session’s QR code or text code. Attendance already saved will remain unchanged.</p>
+          <div className="la-confirm-actions">
+            <button type="button" className="la-confirm-cancel" onClick={() => setShowCloseConfirm(false)} disabled={closing}>Keep session open</button>
+            <button type="button" className="la-confirm-submit" onClick={() => handleCloseSession(false)} disabled={closing}>
+              {closing ? 'Closing session...' : 'Yes, close session'}
+            </button>
+          </div>
+        </section>
+      </div>
+    )}
 
     <footer className="la-footer">
       <span>AttendX</span>

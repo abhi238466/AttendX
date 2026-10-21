@@ -31,6 +31,7 @@ const attendanceLimiter = rateLimit({
 const challengeSchema = z.object({
   attendanceSessionId: z.string().uuid().optional(),
   token: z.string().trim().min(1).max(500),
+  deviceToken: z.string().trim().min(32).max(200),
 }).superRefine((data, ctx) => {
   const isTextCode = /^[A-Z]{2}\d{6}$/i.test(data.token.trim())
 
@@ -46,6 +47,7 @@ const challengeSchema = z.object({
 const attendanceSchema = z.object({
   attendanceSessionId: z.string().uuid(),
   challengeToken: z.string().trim().min(1).max(500),
+  deviceToken: z.string().trim().min(32).max(200),
   fullName: z.string().trim().min(2).max(120),
   classRollNumber: z.string().trim().min(1).max(50),
   universityRollNumber: z.string().trim().min(1).max(80),
@@ -130,7 +132,7 @@ async function logAttempt({
   } catch (error) {
     console.error(
       'Attendance attempt logging failed:',
-      error.message
+      error
     )
   }
 }
@@ -296,9 +298,18 @@ router.post(
 
       const rawChallenge = randomBytes(32).toString('base64url')
 
-      // Recheck the session deadline in the transaction before saving
-      // the challenge. Store only its hash, never the raw secret.
+      // Serialize challenge creation against session closure and token rotation.
+      // Store only the challenge hash, never the raw secret.
       const challenge = await prisma.$transaction(async (tx) => {
+        // The same session-row lock should be used by close/rotation routes.
+        // If closure happens first, this transaction sees the closed session.
+        await tx.$queryRaw`
+          SELECT id
+          FROM "AttendanceSession"
+          WHERE id = ${session.id}::uuid
+          FOR UPDATE
+        `
+
         const currentSession =
           await tx.attendanceSession.findUnique({
             where: {
@@ -321,6 +332,45 @@ router.post(
           return null
         }
 
+        // The QR/text token may have expired or been rotated after the
+        // first lookup. Confirm it is still valid before issuing a challenge.
+        const currentToken = await tx.qrCodeToken.findFirst({
+          where: {
+            id: storedToken.id,
+            attendanceSessionId: session.id,
+            tokenHash: hashToken(normalizedToken),
+            tokenType,
+            expiresAt: {
+              gt: transactionNow,
+            },
+          },
+          select: {
+            id: true,
+          },
+        })
+
+        if (!currentToken) {
+          return null
+        }
+
+        // Device locks are session-specific, not QR/text-token-specific.
+        // Check only after the session and current code have been validated.
+        const existingDeviceLock = await tx.attendanceDeviceLock.findUnique({
+          where: {
+            attendanceSessionId_deviceTokenHash: {
+              attendanceSessionId: session.id,
+              deviceTokenHash: hashToken(data.deviceToken),
+            },
+          },
+          select: {
+            id: true,
+          },
+        })
+
+        if (existingDeviceLock) {
+          return { failure: 'DEVICE_ALREADY_MARKED' }
+        }
+
         const finalDeadline = getSessionDeadline(currentSession)
 
         const finalExpiry = new Date(
@@ -335,7 +385,7 @@ router.post(
           return null
         }
 
-        return tx.attendanceChallenge.create({
+        const createdChallenge = await tx.attendanceChallenge.create({
           data: {
             attendanceSessionId: session.id,
             tokenHash: hashToken(rawChallenge),
@@ -345,13 +395,23 @@ router.post(
             expiresAt: true,
           },
         })
+
+        return { expiresAt: createdChallenge.expiresAt }
       })
+
+      if (challenge?.failure === 'DEVICE_ALREADY_MARKED') {
+        return fail(
+          res,
+          409,
+          'Attendance already marked for this session on this device.'
+        )
+      }
 
       if (!challenge) {
         return fail(
           res,
           409,
-          'The attendance session has ended.'
+          'The session ended or the code expired. Please use the latest QR/code.'
         )
       }
 
@@ -559,6 +619,26 @@ router.post(
           }
         }
 
+        // A successful attendance on this device blocks further attempts
+        // for this session, even when the QR/text token rotates.
+        const existingDeviceLock = await tx.attendanceDeviceLock.findUnique({
+          where: {
+            attendanceSessionId_deviceTokenHash: {
+              attendanceSessionId: session.id,
+              deviceTokenHash: hashToken(data.deviceToken),
+            },
+          },
+          select: {
+            id: true,
+          },
+        })
+
+        if (existingDeviceLock) {
+          return {
+            failure: 'DEVICE_ALREADY_MARKED',
+          }
+        }
+
         // Atomic one-time challenge consumption.
         const consumed = await tx.attendanceChallenge.updateMany({
           where: {
@@ -606,6 +686,15 @@ router.post(
           },
         })
 
+        // Create the lock only after the attendance record has been created.
+        // Both writes share this transaction, so failed submissions never lock a device.
+        await tx.attendanceDeviceLock.create({
+          data: {
+            attendanceSessionId: session.id,
+            deviceTokenHash: hashToken(data.deviceToken),
+          },
+        })
+
         await tx.attendanceAttempt.create({
           data: {
             attendanceSessionId: session.id,
@@ -650,6 +739,24 @@ router.post(
           res,
           409,
           'The attendance deadline has passed.'
+        )
+      }
+
+      if (result.failure === 'DEVICE_ALREADY_MARKED') {
+        await logAttempt({
+          attendanceSessionId: session.id,
+          normalizedUniversityRollNumber,
+          outcome: 'DUPLICATE',
+          latitude: data.latitude,
+          longitude: data.longitude,
+          locationAccuracyMeters: data.locationAccuracyMeters,
+          riskFlags: ['DEVICE_ALREADY_MARKED'],
+        })
+
+        return fail(
+          res,
+          409,
+          'Attendance already marked for this session on this device.'
         )
       }
 

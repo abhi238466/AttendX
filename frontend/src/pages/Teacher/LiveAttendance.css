@@ -394,7 +394,7 @@ transition: background .18s ease, border-color .18s ease;
 overflow-wrap: anywhere;
 }
 
-.la-student-link:hover(.is-disabled) {
+.la-student-link:hover:not(.is-disabled) {
 border-color: #bcb4ff;
 background: #f0eeff;
 }
@@ -461,14 +461,14 @@ cursor: pointer;
 transition: background .18s ease, border-color .18s ease, color .18s ease;
 }
 
-.la-secondary-button:hover() {
+.la-secondary-button:not(:disabled):hover {
 border-color: #d0caff;
 background: #f8f7ff;
 color: var(--la-purple);
 }
 
-.la-secondary-button,
-.la-close-button {
+.la-secondary-button:disabled,
+.la-close-button:disabled {
 opacity: .6;
 cursor: not-allowed;
 }
@@ -510,7 +510,7 @@ background: #fff8f8;
 color: #a83e49;
 }
 
-.la-close-button:hover() {
+.la-close-button:not(:disabled):hover {
 border-color: #e9b7bc;
 background: #fff0f1;
 }
@@ -622,4 +622,314 @@ animation-duration: .01ms !important;
 animation-iteration-count: 1 !important;
 transition-duration: .01ms !important;
 }
+}
+
+/* Session summary layout refinements */
+.la-session-card {
+  min-width: 0;
+}
+
+.la-session-details,
+.la-session-meta,
+.la-session-meta span {
+  min-width: 0;
+}
+
+.la-session-meta span {
+  align-items: flex-start;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.la-session-meta span > svg {
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+}
+
+@media (min-width: 901px) {
+  .la-session-card {
+    display: grid;
+    grid-template-columns: 52px minmax(0, 1fr) minmax(220px, 280px);
+    align-items: center;
+  }
+
+  .la-session-meta {
+    width: 100%;
+  }
+}
+
+@media (max-width: 900px) {
+  .la-session-card {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .la-session-icon {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .la-session-details {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .la-session-meta {
+    grid-column: 1 / -1;
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    padding-top: 14px;
+    border-top: 1px solid #edf0f6;
+  }
+}
+
+@media (max-width: 560px) {
+  .la-session-card {
+    gap: 12px;
+    padding: 17px;
+  }
+
+  .la-session-meta span {
+    gap: 9px;
+    font-size: 13px;
+  }
+
+  .la-session-details h2 {
+    overflow-wrap: anywhere;
+  }
+}
+/* Toast notifications for Live Attendance */
+.la-toast-stack {
+  position: fixed;
+  top: 22px;
+  right: 22px;
+  z-index: 1200;
+  display: grid;
+  width: min(420px, calc(100vw - 28px));
+  gap: 10px;
+  pointer-events: none;
+}
+
+.la-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 14px 15px;
+  border: 1px solid;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 14px 40px rgb(28 39 66 / 16%);
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  pointer-events: auto;
+  animation: la-toast-enter .22s ease-out;
+}
+
+.la-toast > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.la-toast > span {
+  min-width: 0;
+  flex: 1;
+}
+
+.la-toast-error {
+  border-color: #f2c9ce;
+  color: #a52c38;
+  background: #fffafa;
+}
+
+.la-toast-error > svg {
+  color: #c43d4b;
+}
+
+.la-toast-success {
+  border-color: #c8ead7;
+  color: #197348;
+  background: #f8fffb;
+}
+
+.la-toast-success > svg {
+  color: #21865a;
+}
+
+.la-toast-dismiss {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  flex: 0 0 27px;
+  place-items: center;
+  margin: -5px -5px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: currentColor;
+  font: inherit;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.la-toast-dismiss:hover {
+  background: rgb(120 130 150 / 10%);
+}
+
+@keyframes la-toast-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Custom confirmation dialog for closing an attendance session */
+.la-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  display: grid;
+  align-items: center;
+  justify-items: center;
+  padding: 20px;
+  background: rgb(19 27 48 / 55%);
+  backdrop-filter: blur(4px);
+}
+
+.la-confirm-dialog {
+  width: min(100%, 460px);
+  padding: 27px;
+  border: 1px solid #e7eaf3;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 24px 80px rgb(15 23 42 / 28%);
+  color: var(--la-text);
+  animation: la-confirm-enter .18s ease-out;
+}
+
+.la-confirm-icon {
+  display: grid;
+  width: 50px;
+  height: 50px;
+  place-items: center;
+  margin-bottom: 18px;
+  border-radius: 15px;
+  background: #fff0f1;
+  color: #b43e49;
+}
+
+.la-confirm-dialog h2 {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -.4px;
+}
+
+.la-confirm-dialog p {
+  margin: 12px 0 23px;
+  color: #69758b;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.la-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.la-confirm-cancel,
+.la-confirm-submit {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 15px;
+  border: 1px solid var(--la-border);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+  transition: background .18s ease, border-color .18s ease, opacity .18s ease;
+}
+
+.la-confirm-cancel {
+  background: #fff;
+  color: #59647d;
+}
+
+.la-confirm-cancel:hover:not(:disabled) {
+  background: #f6f7fb;
+}
+
+.la-confirm-submit {
+  border-color: #b43e49;
+  background: #b43e49;
+  color: #fff;
+}
+
+.la-confirm-submit:hover:not(:disabled) {
+  border-color: #96313b;
+  background: #96313b;
+}
+
+.la-confirm-cancel:disabled,
+.la-confirm-submit:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+
+@keyframes la-confirm-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (max-width: 560px) {
+  .la-toast-stack {
+    top: 12px;
+    right: 12px;
+    width: calc(100vw - 24px);
+  }
+
+  .la-confirm-dialog {
+    padding: 22px;
+    border-radius: 17px;
+  }
+
+  .la-confirm-dialog h2 {
+    font-size: 19px;
+  }
+
+  .la-confirm-actions {
+    flex-direction: column-reverse;
+  }
+
+  .la-confirm-cancel,
+  .la-confirm-submit {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .la-toast,
+  .la-confirm-dialog {
+    animation: none;
+  }
 }

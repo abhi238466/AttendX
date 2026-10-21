@@ -326,6 +326,59 @@ router.post('/', requireTeacher, async (req, res, next) => {
 // Return only the authenticated teacher's sessions.
 router.get('/', requireTeacher, async (req, res, next) => {
   try {
+    // Close this teacher's sessions whose timer has expired.
+    // Existing attendance records are not modified or deleted.
+    const now = new Date()
+
+    const expiredSessions = await prisma.attendanceSession.findMany({
+      where: {
+        teacherId: req.teacher.id,
+        status: 'ACTIVE',
+        endsAt: { lte: now },
+      },
+      select: { id: true },
+    })
+
+    if (expiredSessions.length > 0) {
+      const expiredSessionIds = expiredSessions.map(
+        (session) => session.id
+      )
+
+      await prisma.$transaction(async (tx) => {
+        const closedAt = new Date()
+
+        await tx.attendanceSession.updateMany({
+          where: {
+            id: { in: expiredSessionIds },
+            teacherId: req.teacher.id,
+            status: 'ACTIVE',
+            endsAt: { lte: closedAt },
+          },
+          data: {
+            status: 'CLOSED',
+          },
+        })
+
+        await tx.qrCodeToken.updateMany({
+          where: {
+            attendanceSessionId: { in: expiredSessionIds },
+            expiresAt: { gt: closedAt },
+          },
+          data: {
+            expiresAt: closedAt,
+          },
+        })
+
+        // Release device locks for sessions whose hard deadline has passed.
+        // Attendance records are intentionally preserved.
+        await tx.attendanceDeviceLock.deleteMany({
+          where: {
+            attendanceSessionId: { in: expiredSessionIds },
+          },
+        })
+      })
+    }
+
     const sessions = await prisma.attendanceSession.findMany({
       where: {
         teacherId: req.teacher.id,
@@ -345,7 +398,7 @@ router.get('/', requireTeacher, async (req, res, next) => {
 })
 
 // POST /api/teacher/sessions/:sessionId/tokens/rotate
-// Create a QR token and a text code valid for at most 15 seconds.
+// Create a QR token and a text code valid for at most 50 seconds.
 // Previous unexpired tokens for this session are revoked atomically.
 router.post(
   '/:sessionId/tokens/rotate',
@@ -415,24 +468,22 @@ router.post(
         })
       }
 
-      // Never allow a token to outlive the session deadline.
-      const expiresAt = new Date(
+      // Preliminary deadline check. The final token expiry is calculated
+      // inside the transaction immediately before token rows are written.
+      const preliminaryExpiry = new Date(
         Math.min(
           now.getTime() + TOKEN_LIFETIME_SECONDS * 1000,
           attendanceSession.endsAt.getTime()
         )
       )
 
-      const remainingSeconds = Math.max(
-        0,
-        Math.floor((expiresAt.getTime() - now.getTime()) / 1000)
-      )
-
-      if (remainingSeconds <= 0) {
+      if (preliminaryExpiry <= now) {
         return res.status(409).json({
           error: 'The attendance session has ended.',
         })
       }
+
+      let expiresAt
 
       // Raw tokens are returned only to the authenticated teacher.
       // A PostgreSQL transaction advisory lock serializes code generation
@@ -445,9 +496,13 @@ router.post(
         try {
           await prisma.$transaction(async (tx) => {
             // Global lock: do not replace with a JavaScript Set/Map.
-            await tx.$executeRaw`
-  SELECT pg_advisory_xact_lock(73829104)
-`
+            // Return a supported scalar value instead of the PostgreSQL
+            // `void` result from pg_advisory_xact_lock. This avoids Prisma's
+            // "Failed to deserialize column of type 'void'" error.
+            await tx.$queryRaw`
+              SELECT 1 AS locked
+              FROM (SELECT pg_advisory_xact_lock(73829104)) AS lock_call
+            `
 
             // Also lock this session so simultaneous rotations for the same
             // teacher/session cannot leave two current token pairs.
@@ -519,6 +574,22 @@ router.post(
               throw error
             }
 
+            // Calculate validity as late as possible so transaction delays
+            // do not silently shorten the new code's intended lifetime.
+            const tokenCreatedAt = new Date()
+            expiresAt = new Date(
+              Math.min(
+                tokenCreatedAt.getTime() + TOKEN_LIFETIME_SECONDS * 1000,
+                currentSession.endsAt.getTime()
+              )
+            )
+
+            if (expiresAt <= tokenCreatedAt) {
+              const error = new Error('The attendance session has ended.')
+              error.code = 'SESSION_NOT_ACTIVE'
+              throw error
+            }
+
             qrToken = randomBytes(32).toString('base64url')
             textCode = uniqueTextCode
 
@@ -527,7 +598,7 @@ router.post(
             await tx.qrCodeToken.updateMany({
               where: {
                 attendanceSessionId: attendanceSession.id,
-                expiresAt: { gt: transactionNow },
+                expiresAt: { gt: tokenCreatedAt },
               },
               data: {
                 expiresAt: transactionNow,
@@ -650,6 +721,12 @@ router.patch(
         }
 
         if (attendanceSession.status === 'CLOSED') {
+          await tx.attendanceDeviceLock.deleteMany({
+            where: {
+              attendanceSessionId: attendanceSession.id,
+            },
+          })
+
           return {
             alreadyClosed: true,
             session: attendanceSession,
@@ -675,6 +752,13 @@ router.patch(
           },
           data: {
             expiresAt: closedAt,
+          },
+        })
+
+        // Remove only this session's device locks; keep attendance history.
+        await tx.attendanceDeviceLock.deleteMany({
+          where: {
+            attendanceSessionId: attendanceSession.id,
           },
         })
 

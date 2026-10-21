@@ -1,657 +1,469 @@
-import { useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft,
-  MapPin,
-  Plus,
-  Trash2,
-  CalendarDays,
-  Clock3,
-  BookOpen,
-  Users,
+  CheckCircle2,
+  ClipboardCheck,
   LoaderCircle,
+  LockKeyhole,
+  MapPin,
+  QrCode,
+  ShieldCheck,
 } from 'lucide-react'
+import './StudentAttendance.css'
 
-import "./StudentAttendance.css";
+const API_BASE =
+  import.meta.env.VITE_API_BASE_URL ||
+  import.meta.env.VITE_API_URL ||
+  ''
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
-
-function getTodayDate() {
-  const now = new Date()
-  const localDate = new Date(
-    now.getTime() - now.getTimezoneOffset() * 60000
-  )
-
-  return localDate.toISOString().slice(0, 10)
+function readError(payload, fallback) {
+  return payload?.message || payload?.error || fallback
 }
 
-function StartAttendance({ onBack }) {
-  const navigate = useNavigate()
-  const [course, setCourse] = useState('')
-  const [subject, setSubject] = useState('')
-  const [className, setClassName] = useState('')
-  const [roomName, setRoomName] = useState('')
-  const [sections, setSections] = useState([''])
-  const [date, setDate] = useState(getTodayDate())
-  const [classStartTime, setClassStartTime] = useState('')
-  const [classEndTime, setClassEndTime] = useState('')
-  const [durationMinutes, setDurationMinutes] = useState('5')
-  const [radiusMeters, setRadiusMeters] = useState('25')
-  const [customRadius, setCustomRadius] = useState('')
-  const [location, setLocation] = useState(null)
-  // Keep the latest accepted reading available immediately for form submission.
-  const locationRef = useRef(null)
-  const [locationStatus, setLocationStatus] = useState('')
-  const [error, setError] = useState('')
-  const [isSubmitting, setIsSubmitting] = useState(false)
+// Stable browser token used by the server to lock this device per attendance session.
+// This is an identifier, not authentication; the server stores only its SHA-256 hash.
+let memoryDeviceToken = ''
 
-  const updateSection = (index, value) => {
-    setSections((current) =>
-      current.map((section, i) => (i === index ? value : section))
-    )
+function getDeviceToken() {
+  const storageKey = 'attendx:deviceToken'
+
+  try {
+    const storedToken = localStorage.getItem(storageKey)
+    if (storedToken && storedToken.length >= 32) return storedToken
+  } catch {
+    // Continue with an in-memory token if browser storage is unavailable.
   }
 
-  const addSection = () => {
-    if (sections.length < 20) {
-      setSections((current) => [...current, ''])
+  if (!memoryDeviceToken) {
+    const bytes = new Uint8Array(32)
+
+    if (globalThis.crypto?.getRandomValues) {
+      globalThis.crypto.getRandomValues(bytes)
+      memoryDeviceToken = Array.from(bytes, (byte) =>
+        byte.toString(16).padStart(2, '0'),
+      ).join('')
+    } else {
+      // Modern browsers provide crypto.getRandomValues; fail closed if unavailable.
+      throw new Error('Secure device identification is unavailable. Please use an updated browser.')
     }
   }
 
-  const removeSection = (index) => {
-    setSections((current) => current.filter((_, i) => i !== index))
+  try {
+    localStorage.setItem(storageKey, memoryDeviceToken)
+  } catch {
+    // The in-memory token remains usable for this page session.
   }
 
-  const captureLocation = () => {
+  return memoryDeviceToken
+}
+
+export default function StudentAttendance() {
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+
+  const initialToken = useMemo(
+    () =>
+      searchParams.get('token') ||
+      searchParams.get('code') ||
+      searchParams.get('textCode') ||
+      '',
+    [searchParams],
+  )
+  const initialSessionId =
+    searchParams.get('attendanceSessionId') ||
+    searchParams.get('sessionId') ||
+    ''
+
+  const [code, setCode] = useState(initialToken)
+  const [sessionId, setSessionId] = useState(initialSessionId)
+  const [stage, setStage] = useState(initialToken ? 'verify' : 'code')
+  const autoVerifyKey = useRef('')
+  const [challenge, setChallenge] = useState(null)
+  const [form, setForm] = useState({
+    fullName: '',
+    classRollNumber: '',
+    universityRollNumber: '',
+    section: '',
+  })
+  const [location, setLocation] = useState(null)
+  const [locationMessage, setLocationMessage] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+
+  useEffect(() => {
+    if (!initialToken) return
+
+    const key = `${initialSessionId}:${initialToken}`
+    if (autoVerifyKey.current === key) return
+    autoVerifyKey.current = key
+
+    setCode(initialToken)
+    setSessionId(initialSessionId)
+    setStage('verify')
+    verifyCode(null, initialToken, initialSessionId)
+    // This effect intentionally runs only when QR/code URL parameters change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialToken, initialSessionId])
+
+  function updateField(event) {
+    const { name, value } = event.target
+    setForm((current) => ({ ...current, [name]: value }))
+  }
+
+  async function verifyCode(event, tokenOverride = null, sessionIdOverride = null) {
+    event?.preventDefault()
     setError('')
-    setLocation(null)
-    locationRef.current = null
-    setLocationStatus('Checking GPS readings. Keep location enabled...')
+    setSuccess('')
+
+    const normalized = (tokenOverride ?? code).trim()
+    const activeSessionId = sessionIdOverride ?? sessionId
+    if (!normalized) {
+      setError('Please enter the current attendance code or scan the QR code.')
+      return
+    }
+
+    const isTextCode = /^[A-Z]{2}\d{6}$/i.test(normalized)
+    if (!isTextCode && !activeSessionId) {
+      setError('QR information is incomplete. Please scan the QR code again.')
+      return
+    }
+
+    setBusy(true)
+    try {
+      const body = {
+        token: normalized,
+        deviceToken: getDeviceToken(),
+      }
+      if (!isTextCode) body.attendanceSessionId = activeSessionId
+
+      const response = await fetch(`${API_BASE}/api/attendance/challenge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const payload = await response.json().catch(() => ({}))
+
+      if (!response.ok || payload.success === false) {
+        throw new Error(readError(payload, 'Code verification failed. Please try again.'))
+      }
+
+      if (!payload.attendanceSessionId || !payload.challengeToken) {
+        throw new Error('The server response is incomplete. Please try again.')
+      }
+
+      setSessionId(payload.attendanceSessionId)
+
+      // Convenience lock for the same browser. The backend remains the source
+      // of truth, because browser storage can be cleared or unavailable.
+      try {
+        const previousRoll = localStorage.getItem('attendx:lastUniversityRoll') || ''
+        const lockKey = `attendx:marked:${payload.attendanceSessionId}:${previousRoll.trim().replace(/\s+/g, '').toUpperCase()}`
+        if (previousRoll && localStorage.getItem(lockKey) === '1') {
+          setChallenge(null)
+          setError('')
+          setSuccess('Your attendance has already been marked for this session.')
+          setStage('locked')
+          return
+        }
+      } catch {
+        // Continue normally if browser storage is blocked.
+      }
+
+      setChallenge({
+        attendanceSessionId: payload.attendanceSessionId,
+        challengeToken: payload.challengeToken,
+        challengeExpiresAt: payload.challengeExpiresAt,
+        sections: Array.isArray(payload.sections) ? payload.sections : [],
+      })
+      setForm((current) => ({
+        ...current,
+        section:
+          current.section && payload.sections?.includes(current.section)
+            ? current.section
+            : (payload.sections?.[0] || ''),
+      }))
+      setLocation(null)
+      setLocationMessage('')
+      setStage('form')
+    } catch (err) {
+      setError(err.message || 'Could not verify the code.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function captureLocation() {
+    setError('')
+    setLocationMessage('Getting your current location…')
 
     if (!navigator.geolocation) {
-      setLocationStatus('')
-      setError('This browser does not support location services.')
+      setLocationMessage('')
+      setError('This browser does not support location. Please use a supported browser.')
       return
     }
 
-    let bestPosition = null
-    let bestReceivedAt = null
-    let watchId = null
-    let finished = false
-    let timeoutId = null
-
-    const finish = (forceBest = false) => {
-      if (finished) return
-      finished = true
-
-      if (watchId !== null) {
-        navigator.geolocation.clearWatch(watchId)
-      }
-      if (timeoutId !== null) {
-        clearTimeout(timeoutId)
-      }
-
-      if (!bestPosition) {
-        setLocationStatus('')
-        setError(
-          'Your device did not return a location. Check browser location permission and device location services, then try again.'
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const nextLocation = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          locationAccuracyMeters: position.coords.accuracy,
+          locationCapturedAt: new Date().toISOString(),
+        }
+        setLocation(nextLocation)
+        setLocationMessage(
+          `Location captured (accuracy approximately ${Math.round(position.coords.accuracy)} m).`,
         )
-        return
-      }
+      },
+      (geoError) => {
+        setLocation(null)
+        setLocationMessage('')
+        const messages = {
+          1: 'Location permission was denied. Allow location access and try again.',
+          2: 'Your location could not be determined. Please try again outdoors or near a window.',
+          3: 'Location request timed out. Please try again.',
+        }
+        setError(messages[geoError.code] || 'Could not get your location. Please try again.')
+      },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 },
+    )
+  }
 
-      const { latitude, longitude, accuracy } = bestPosition.coords
-      // Use when this page received the selected reading. Some location providers
-      // can return a position timestamp that is older than the actual callback.
-      const capturedAt = new Date(bestReceivedAt ?? Date.now())
+  async function submitAttendance(event) {
+    event.preventDefault()
+    setError('')
+    setSuccess('')
 
-      const reading = {
-        latitude,
-        longitude,
-        accuracy,
-        capturedAt: capturedAt.toISOString(),
-      }
-
-      // Update the ref and UI together so submit always uses the captured reading.
-      locationRef.current = reading
-      setLocation(reading)
-
-      if (accuracy <= 50) {
-        setLocationStatus(
-          `Location captured. Device-reported accuracy: about ${Math.round(accuracy)} m.`
-        )
-      } else {
-        setLocationStatus(
-          `A location was received, but the device reports about ${Math.round(accuracy)} m uncertainty. This reading may not be precise enough to create a classroom session. Try again with precise location enabled.`
-        )
-      }
+    if (!challenge) {
+      setError('Please verify the current attendance code again.')
+      setStage('code')
+      return
+    }
+    if (!location) {
+      setError('Capture your current location before submitting attendance.')
+      return
+    }
+    if (location.locationAccuracyMeters > 50) {
+      setError('Location accuracy is too low. Try again with precise location enabled.')
+      return
     }
 
+    setBusy(true)
     try {
-      watchId = navigator.geolocation.watchPosition(
-        (position) => {
-          const { latitude, longitude, accuracy } = position.coords
+      const response = await fetch(`${API_BASE}/api/attendance/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          attendanceSessionId: challenge.attendanceSessionId,
+          challengeToken: challenge.challengeToken,
+          deviceToken: getDeviceToken(),
+          fullName: form.fullName.trim(),
+          classRollNumber: form.classRollNumber.trim(),
+          universityRollNumber: form.universityRollNumber.trim(),
+          section: form.section,
+          ...location,
+        }),
+      })
+      const payload = await response.json().catch(() => ({}))
 
-          if (
-            Number.isFinite(latitude) &&
-            Number.isFinite(longitude) &&
-            Number.isFinite(accuracy) &&
-            latitude >= -90 &&
-            latitude <= 90 &&
-            longitude >= -180 &&
-            longitude <= 180 &&
-            accuracy > 0 &&
-            (!bestPosition || accuracy < bestPosition.coords.accuracy)
-          ) {
-            bestPosition = position
-            bestReceivedAt = Date.now()
-            console.info('[AttendX] Location reading received', {
-              latitude,
-              longitude,
-              accuracyMeters: accuracy,
-              receivedAt: new Date(bestReceivedAt).toISOString(),
-            })
-            setLocationStatus(
-              `Improving GPS reading... best reported accuracy so far: ${Math.round(accuracy)} m.`
-            )
+      if (!response.ok || payload.success === false) {
+        throw new Error(readError(payload, 'Attendance could not be submitted. Please try again.'))
+      }
 
-            // Stop early once a reasonably precise reading is received.
-            if (accuracy <= 50) {
-              finish()
-            }
-          }
-        },
-        (locationError) => {
-          if (finished) return
-
-          if (locationError.code === locationError.PERMISSION_DENIED) {
-            finished = true
-            if (watchId !== null) navigator.geolocation.clearWatch(watchId)
-            if (timeoutId !== null) clearTimeout(timeoutId)
-            setLocationStatus('')
-            setError(
-              'Location permission was denied. Allow location access in your browser and device settings, then try again.'
-            )
-          } else if (!bestPosition && locationError.code === locationError.POSITION_UNAVAILABLE) {
-            setLocationStatus(
-              'The device has not provided a usable GPS reading yet. Waiting for another reading...'
-            )
-          }
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 20000,
-          maximumAge: 0,
-        }
-      )
-
-      // Give the device up to 12 seconds to improve its reading.
-      // If it cannot reach 50 m, keep the best reading so the user sees
-      // the actual device-reported uncertainty instead of a fake calculation.
-      timeoutId = setTimeout(() => finish(true), 12000)
-    } catch {
-      setLocationStatus('')
-      setError('Unable to start location capture. Please try again.')
+      setSuccess(payload.message || 'Attendance marked successfully.')
+      try {
+        const normalizedRoll = form.universityRollNumber.trim().replace(/\s+/g, '').toUpperCase()
+        localStorage.setItem('attendx:lastUniversityRoll', form.universityRollNumber.trim())
+        localStorage.setItem(`attendx:marked:${challenge.attendanceSessionId}:${normalizedRoll}`, '1')
+      } catch {
+        // Backend duplicate protection still applies if storage is unavailable.
+      }
+      setStage('success')
+    } catch (err) {
+      setError(err.message || 'Attendance could not be submitted.')
+      if (/already been marked|already marked for this session|already been submitted/i.test(err.message || '')) {
+        setChallenge(null)
+        setSuccess('Your attendance has already been marked for this session.')
+        setStage('locked')
+      } else if (/verification has expired|already used|current QR\/code again/i.test(err.message || '')) {
+        setChallenge(null)
+        setStage('code')
+      }
+    } finally {
+      setBusy(false)
     }
   }
 
-  const handleContinue = async (event) => {
-    event.preventDefault()
+  function startAgain() {
+    setCode('')
+    setSessionId('')
+    setChallenge(null)
+    setLocation(null)
+    setLocationMessage('')
     setError('')
-
-    // Use the exact reading captured by this component, not a stale render value.
-    const currentLocation = locationRef.current || location
-
-    const selectedSections = [
-      ...new Set(
-        sections
-          .map((section) => section.trim())
-          .filter(Boolean)
-      ),
-    ]
-
-    const enteredSections = sections.filter((section) =>
-      section.trim()
-    )
-
-    if (!course.trim() || !subject.trim()) {
-      setError('Please enter both the course and subject.')
-      return
-    }
-
-    if (selectedSections.length === 0) {
-      setError('Please enter at least one section.')
-      return
-    }
-
-    if (selectedSections.length !== enteredSections.length) {
-      setError('Section names must be unique.')
-      return
-    }
-
-    if (!date || !classStartTime || !classEndTime) {
-      setError('Please select the class date, start time and end time.')
-      return
-    }
-
-    const classStart = new Date(`${date}T${classStartTime}`)
-    const classEnd = new Date(`${date}T${classEndTime}`)
-
-    if (
-      Number.isNaN(classStart.getTime()) ||
-      Number.isNaN(classEnd.getTime()) ||
-      classEnd <= classStart
-    ) {
-      setError('Class end time must be later than class start time.')
-      return
-    }
-
-    if (!currentLocation) {
-      setError(
-        'Capture your current classroom location before starting attendance.'
-      )
-      return
-    }
-
-    const selectedRadius =
-      radiusMeters === 'custom'
-        ? Number(customRadius)
-        : Number(radiusMeters)
-
-    if (
-      !Number.isFinite(selectedRadius) ||
-      selectedRadius < 5 ||
-      selectedRadius > 80
-    ) {
-      setError('Choose a radius between 5 and 80 metres.')
-      return
-    }
-
-    if (
-      !Number.isFinite(currentLocation.accuracy) ||
-      currentLocation.accuracy <= 0
-    ) {
-      setError('Location accuracy is invalid. Capture your location again.')
-      return
-    }
-
-    if (currentLocation.accuracy > 50) {
-      setError(
-        `Your device reports approximately ${Math.round(currentLocation.accuracy)} metres of location uncertainty. The classroom location cannot be verified reliably from this reading. Enable precise location and capture again. The attendance radius has not been changed.`
-      )
-      return
-    }
-
-    const capturedAtMs = Date.parse(currentLocation.capturedAt)
-    console.info('[AttendX] Submitting classroom location', {
-      capturedAt: currentLocation.capturedAt,
-      ageMs: Number.isFinite(capturedAtMs) ? Date.now() - capturedAtMs : null,
-      accuracyMeters: currentLocation.accuracy,
-    })
-
-    setIsSubmitting(true)
-
-    try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/teacher/sessions`,
-        {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-          },
-          body: JSON.stringify({
-            courseName: course.trim(),
-            subjectName: subject.trim(),
-            className: className.trim() || undefined,
-            roomName: roomName.trim() || undefined,
-            sections: selectedSections,
-            latitude: currentLocation.latitude,
-            longitude: currentLocation.longitude,
-            radiusMeters: selectedRadius,
-            durationMinutes: Number(durationMinutes),
-            scheduledStartsAt: classStart.toISOString(),
-            scheduledEndsAt: classEnd.toISOString(),
-            locationAccuracyMeters: currentLocation.accuracy,
-            locationCapturedAt: currentLocation.capturedAt,
-          }),
-        }
-      )
-
-      const result = await response.json().catch(() => ({}))
-
-      if (!response.ok || result.success === false) {
-        throw new Error(
-          result.error || result.message || 'Could not create the attendance session.'
-        )
-      }
-
-      const createdSessionId = result.session?.id
-
-      if (!createdSessionId) {
-        throw new Error(
-          'The session was created, but the server did not return a session ID.'
-        )
-      }
-
-      navigate(`/teacher/live-attendance/${encodeURIComponent(createdSessionId)}`)
-    } catch (requestError) {
-      setError(
-        requestError.message ||
-          'Unable to connect to the server. Check your connection and try again.'
-      )
-    } finally {
-      setIsSubmitting(false)
-    }
+    setSuccess('')
+    setStage('code')
+    navigate('/student/attendance', { replace: true })
   }
 
   return (
-    <section className="td-page-content">
-      <div className="td-page-heading">
-        <div>
-          <p className="td-eyebrow">ATTENDANCE MANAGEMENT</p>
-          <h1>Start Attendance</h1>
-          <p>Configure your class and attendance settings.</p>
-        </div>
-
+    <main className="student-attendance-page">
+      <div className="student-attendance-shell">
         <button
+          className="student-back-button"
           type="button"
-          className="td-secondary-btn"
-          onClick={onBack}
-          disabled={isSubmitting}
+          onClick={() => navigate('/')}
         >
-          <ArrowLeft size={16} />
-          Back to Dashboard
+          <ArrowLeft size={17} />
+          Back to Home
         </button>
-      </div>
 
-      <div className="td-attendance-form-card">
-        <h2>Session Details</h2>
-        <p className="td-form-description">
-          Enter class details, select sections and configure attendance.
-        </p>
+        <header className="student-attendance-header">
+          <div className="student-attendance-logo"><ClipboardCheck size={25} /></div>
+          <p className="student-eyebrow">ATTENDX · STUDENT PORTAL</p>
+          <h1>Mark your attendance</h1>
+          <p className="student-subtitle">
+            Scan your teacher’s QR code to continue automatically, or enter the current text code below.
+          </p>
+        </header>
 
-        <form
-          onSubmit={handleContinue}
-          className="td-attendance-form"
-        >
-          <div className="td-form-group">
-            <label htmlFor="attendance-course">
-              <BookOpen size={16} /> Course
-            </label>
-            <input
-              id="attendance-course"
-              type="text"
-              value={course}
-              onChange={(event) => setCourse(event.target.value)}
-              placeholder="e.g. MCA"
-              maxLength={150}
-              required
-            />
+        {error && (
+          <div className="student-alert student-alert-error" role="alert">
+            {error}
           </div>
+        )}
 
-          <div className="td-form-group">
-            <label htmlFor="attendance-subject">Subject</label>
-            <input
-              id="attendance-subject"
-              type="text"
-              value={subject}
-              onChange={(event) => setSubject(event.target.value)}
-              placeholder="e.g. DevOps on Cloud"
-              maxLength={150}
-              required
-            />
-          </div>
-
-          <div className="td-form-group">
-            <label htmlFor="attendance-class">
-              Class / Semester <span>(Optional)</span>
-            </label>
-            <input
-              id="attendance-class"
-              type="text"
-              value={className}
-              onChange={(event) => setClassName(event.target.value)}
-              placeholder="e.g. MCA Semester III"
-              maxLength={100}
-            />
-          </div>
-
-          <div className="td-form-group">
-            <label htmlFor="attendance-room">
-              Classroom Name <span>(Optional)</span>
-            </label>
-            <input
-              id="attendance-room"
-              type="text"
-              value={roomName}
-              onChange={(event) => setRoomName(event.target.value)}
-              placeholder="e.g. Lab 204"
-              maxLength={100}
-            />
-          </div>
-
-          <div className="td-form-group td-form-full">
-            <label>
-              <Users size={16} /> Sections
-            </label>
-            <p className="td-form-help">
-              Add every section attending this class, such as G1, A1 or A2.
+        {stage === 'code' && (
+          <section className="student-panel">
+            <div className="student-panel-icon"><QrCode size={23} /></div>
+            <h2>Verify attendance code</h2>
+            <p className="student-panel-copy">
+              Use the latest code displayed by your teacher. Codes expire automatically.
             </p>
-
-            <div className="td-section-input-list">
-              {sections.map((section, index) => (
-                <div className="td-section-input-row" key={index}>
-                  <input
-                    aria-label={`Section ${index + 1}`}
-                    type="text"
-                    value={section}
-                    onChange={(event) =>
-                      updateSection(index, event.target.value)
-                    }
-                    placeholder={`Section ${index + 1}, e.g. G1`}
-                    maxLength={50}
-                    required={index === 0}
-                  />
-
-                  {sections.length > 1 && (
-                    <button
-                      type="button"
-                      className="td-section-remove-btn"
-                      onClick={() => removeSection(index)}
-                      aria-label={`Remove section ${index + 1}`}
-                    >
-                      <Trash2 size={17} />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            <button
-              type="button"
-              className="td-add-section-btn"
-              onClick={addSection}
-              disabled={sections.length >= 20}
-            >
-              <Plus size={16} />
-              Add another section
-            </button>
-          </div>
-
-          <div className="td-form-group">
-            <label htmlFor="attendance-date">
-              <CalendarDays size={16} /> Class Date
-            </label>
-            <input
-              id="attendance-date"
-              type="date"
-              value={date}
-              min={getTodayDate()}
-              onChange={(event) => setDate(event.target.value)}
-              required
-            />
-          </div>
-
-          <div className="td-form-group">
-            <label htmlFor="attendance-duration">
-              <Clock3 size={16} /> Attendance Duration
-            </label>
-            <select
-              id="attendance-duration"
-              value={durationMinutes}
-              onChange={(event) => setDurationMinutes(event.target.value)}
-              required
-            >
-              <option value="1">1 minute</option>
-              <option value="2">2 minutes</option>
-              <option value="3">3 minutes</option>
-              <option value="5">5 minutes</option>
-              <option value="10">10 minutes</option>
-              <option value="15">15 minutes</option>
-              <option value="20">20 minutes</option>
-              <option value="30">30 minutes</option>
-              <option value="60">60 minutes</option>
-              <option value="120">120 minutes</option>
-              <option value="240">240 minutes</option>
-            </select>
-          </div>
-
-          <div className="td-form-group">
-            <label htmlFor="class-start-time">Class Start Time</label>
-            <input
-              id="class-start-time"
-              type="time"
-              value={classStartTime}
-              onChange={(event) => setClassStartTime(event.target.value)}
-              required
-            />
-          </div>
-
-          <div className="td-form-group">
-            <label htmlFor="class-end-time">Class End Time</label>
-            <input
-              id="class-end-time"
-              type="time"
-              value={classEndTime}
-              onChange={(event) => setClassEndTime(event.target.value)}
-              required
-            />
-          </div>
-
-          <div className="td-form-group">
-            <label htmlFor="attendance-radius">Attendance Radius</label>
-            <select
-              id="attendance-radius"
-              value={radiusMeters}
-              onChange={(event) => setRadiusMeters(event.target.value)}
-              required
-            >
-              <option value="5">5 metres</option>
-              <option value="25">25 metres (default)</option>
-              <option value="50">50 metres</option>
-              <option value="80">80 metres</option>
-              <option value="custom">Custom radius (5–80 m)</option>
-            </select>
-          </div>
-
-          {radiusMeters === 'custom' && (
-            <div className="td-form-group">
-              <label htmlFor="custom-radius">
-                Custom Radius (metres)
-              </label>
+            <form onSubmit={verifyCode}>
+              <label htmlFor="attendance-code">Text code</label>
               <input
-                id="custom-radius"
-                type="number"
-                min="5"
-                max="80"
-                value={customRadius}
-                onChange={(event) => setCustomRadius(event.target.value)}
-                placeholder="Enter 5–80 metres"
+                id="attendance-code"
+                name="code"
+                autoComplete="off"
+                autoCapitalize="characters"
+                maxLength={8}
+                placeholder="AB123456"
+                value={code}
+                onChange={(event) => setCode(event.target.value.toUpperCase().replace(/\s/g, ''))}
                 required
               />
-            </div>
-          )}
-
-          <div className="td-form-group td-form-full">
-            <label>
-              <MapPin size={16} /> Classroom Location
-            </label>
-            <p className="td-form-help">
-              Capture your current location for this session. It will not
-              be reused automatically for your next class.
+              <button className="student-primary-button" type="submit" disabled={busy}>
+                {busy ? <LoaderCircle className="student-spin" size={18} /> : <ShieldCheck size={18} />}
+                {busy ? 'Verifying…' : 'Verify and Continue'}
+              </button>
+            </form>
+            <p className="student-security-note">
+              <ShieldCheck size={15} /> Attendance is recorded only after verification and location checks.
             </p>
+          </section>
+        )}
 
-            <button
-              type="button"
-              className="td-secondary-btn"
-              onClick={captureLocation}
-              disabled={isSubmitting}
-            >
-              <MapPin size={16} />
-              Use Current Location
-            </button>
+        {stage === 'form' && challenge && (
+          <section className="student-panel">
+            <div className="student-verified-label"><CheckCircle2 size={17} /> Code verified</div>
+            <h2>Your details</h2>
+            <p className="student-panel-copy">Enter your details exactly as registered with your institution.</p>
+            <form onSubmit={submitAttendance}>
+              <label htmlFor="fullName">Full name</label>
+              <input id="fullName" name="fullName" value={form.fullName} onChange={updateField} autoComplete="name" minLength={2} maxLength={120} required />
 
-            {locationStatus && (
-              <p className="td-form-help" role="status">
-                {locationStatus}
-              </p>
-            )}
-
-            {location && (
-              <div className="td-location-coordinates td-form-full" aria-live="polite">
-                <div className="td-form-group">
-                  <label htmlFor="attendance-latitude">Latitude</label>
-                  <input
-                    id="attendance-latitude"
-                    type="text"
-                    value={location.latitude.toFixed(6)}
-                    readOnly
-                    aria-readonly="true"
-                  />
+              <div className="student-form-grid">
+                <div>
+                  <label htmlFor="classRollNumber">Class roll number</label>
+                  <input id="classRollNumber" name="classRollNumber" value={form.classRollNumber} onChange={updateField} maxLength={50} required />
                 </div>
-                <div className="td-form-group">
-                  <label htmlFor="attendance-longitude">Longitude</label>
-                  <input
-                    id="attendance-longitude"
-                    type="text"
-                    value={location.longitude.toFixed(6)}
-                    readOnly
-                    aria-readonly="true"
-                  />
+                <div>
+                  <label htmlFor="universityRollNumber">University roll number</label>
+                  <input id="universityRollNumber" name="universityRollNumber" value={form.universityRollNumber} onChange={updateField} maxLength={80} required />
                 </div>
-                <p className="td-form-help">
-                  These coordinates are from the current device reading. Reported accuracy: about {Math.round(location.accuracy)} m.
-                </p>
               </div>
-            )}
-          </div>
 
-          {error && (
-            <div className="td-form-error td-form-full" role="alert">
-              {error}
-            </div>
-          )}
-
-          <div className="td-form-full">
-            <button
-              type="submit"
-              className="td-primary-btn"
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? (
-                <>
-                  <LoaderCircle size={17} />
-                  Creating Session...
-                </>
+              <label htmlFor="section">Section</label>
+              {challenge.sections.length > 0 ? (
+                <select id="section" name="section" value={form.section} onChange={updateField} required>
+                  <option value="" disabled>Select your section</option>
+                  {challenge.sections.map((section) => (
+                    <option key={section} value={section}>{section}</option>
+                  ))}
+                </select>
               ) : (
-                'Start Attendance'
+                <input id="section" name="section" value={form.section} onChange={updateField} placeholder="Enter your section" maxLength={50} required />
               )}
+
+              <div className="student-location-box">
+                <div className="student-location-heading">
+                  <MapPin size={20} />
+                  <div>
+                    <strong>Current location</strong>
+                    <p>Required to check that you are within the classroom attendance area.</p>
+                  </div>
+                </div>
+                <button className="student-secondary-button" type="button" onClick={captureLocation} disabled={busy}>
+                  <MapPin size={17} /> Capture current location
+                </button>
+                {locationMessage && <p className="student-location-message">{locationMessage}</p>}
+              </div>
+
+              <button className="student-primary-button" type="submit" disabled={busy}>
+                {busy ? <LoaderCircle className="student-spin" size={18} /> : <ClipboardCheck size={18} />}
+                {busy ? 'Submitting…' : 'Submit Attendance'}
+              </button>
+              <button className="student-text-button" type="button" onClick={() => { setChallenge(null); setStage('code'); setError('') }}>
+                Use a different code
+              </button>
+            </form>
+          </section>
+        )}
+
+        {stage === 'locked' && (
+          <section className="student-panel student-success-panel">
+            <div className="student-success-icon"><LockKeyhole size={34} /></div>
+            <h2>Attendance already marked</h2>
+            <p>{success || 'Your attendance has already been marked for this session.'}</p>
+            <p className="student-success-detail">
+              This session is locked for you. Scanning the QR code again will not create another attendance record.
+            </p>
+            <button className="student-primary-button" type="button" onClick={() => navigate('/')}>
+              Back to Home
             </button>
-          </div>
-        </form>
+          </section>
+        )}
+
+        {stage === 'verify' && (
+          <section className="student-panel">
+            <div className="student-panel-icon"><LoaderCircle className="student-spin" size={23} /></div>
+            <h2>Verifying attendance</h2>
+            <p className="student-panel-copy">Checking your teacher’s current attendance session. Please wait…</p>
+          </section>
+        )}
+
+        {stage === 'success' && (
+          <section className="student-panel student-success-panel">
+            <div className="student-success-icon"><CheckCircle2 size={34} /></div>
+            <h2>Attendance submitted</h2>
+            <p>{success || 'Your attendance has been marked successfully.'}</p>
+            <p className="student-success-detail">
+              Your submission was accepted by AttendX. You may safely close this page.
+            </p>
+            <button className="student-primary-button" type="button" onClick={startAgain}>
+              Done
+            </button>
+          </section>
+        )}
+
+        <footer className="student-attendance-footer">
+          <ShieldCheck size={15} />
+          Secure attendance verification · AttendX
+        </footer>
       </div>
-    </section>
+    </main>
   )
 }
-
-export default StartAttendance

@@ -1,322 +1,587 @@
-
-/* ========================================
-   AttendX - Student Attendance
-   ======================================== */
-
 .student-attendance-page {
   min-height: 100vh;
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 36px 18px;
+  padding: 28px 18px 36px;
+  color: var(--text-primary, #172033);
   background:
-    radial-gradient(
-      circle at 10% 10%,
-      rgba(59, 130, 246, 0.12),
-      transparent 32%
-    ),
-    radial-gradient(
-      circle at 90% 90%,
-      rgba(99, 102, 241, 0.12),
-      transparent 30%
-    ),
-    #f4f7fc;
-  box-sizing: border-box;
-  font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
+    radial-gradient(ellipse at 15% 0%, rgba(79, 70, 229, 0.11), transparent 38%),
+    var(--background, #f5f7fb);
 }
 
-.student-attendance-page *,
-.student-attendance-page *::before,
-.student-attendance-page *::after {
-  box-sizing: border-box;
-}
-
-.student-attendance-card {
+.student-attendance-shell {
   width: 100%;
-  max-width: 490px;
-  padding: 38px;
-  background: #ffffff;
-  border: 1px solid #e7ecf4;
-  border-radius: 24px;
-  box-shadow:
-    0 24px 65px rgba(31, 48, 83, 0.09),
-    0 4px 12px rgba(31, 48, 83, 0.04);
-  animation: studentCardAppear 0.35s ease-out;
+  max-width: 620px;
+  margin: 0 auto;
 }
 
-.student-attendance-brand {
+.student-back-button,
+.student-text-button {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  padding: 9px 17px;
-  margin-bottom: 22px;
-  color: #ffffff;
-  background: linear-gradient(135deg, #2563eb, #4f46e5);
-  border-radius: 12px;
-  font-size: 17px;
-  font-weight: 800;
-  letter-spacing: -0.4px;
-  box-shadow: 0 5px 14px rgba(59, 91, 219, 0.2);
-}
-
-.student-attendance-card h1 {
-  margin: 0 0 10px;
-  color: #17233d;
-  font-size: clamp(25px, 4vw, 31px);
-  line-height: 1.25;
-  font-weight: 800;
-  letter-spacing: -0.8px;
-}
-
-.student-attendance-description {
-  margin: 0 0 28px;
-  color: #66738a;
-  font-size: 14px;
-  line-height: 1.7;
-}
-
-/* Forms */
-
-.student-attendance-card form {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: 100%;
-}
-
-.student-attendance-card label {
-  margin-top: 8px;
-  color: #34415b;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.student-attendance-card input,
-.student-attendance-card select {
-  display: block;
-  width: 100%;
-  min-width: 0;
-  min-height: 49px;
-  padding: 12px 14px;
-  color: #1d293d;
-  background: #fbfcff;
-  border: 1px solid #dce3ee;
-  border-radius: 11px;
-  outline: none;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary, #667085);
   font: inherit;
-  font-size: 14px;
-  transition:
-    border-color 0.2s ease,
-    box-shadow 0.2s ease,
-    background 0.2s ease;
-}
-
-.student-attendance-card input::placeholder {
-  color: #9aa5b7;
-}
-
-.student-attendance-card input:hover,
-.student-attendance-card select:hover {
-  border-color: #aebfe0;
-}
-
-.student-attendance-card input:focus,
-.student-attendance-card select:focus {
-  background: #ffffff;
-  border-color: #4674ef;
-  box-shadow: 0 0 0 4px rgba(70, 116, 239, 0.12);
-}
-
-.student-attendance-card input:disabled,
-.student-attendance-card select:disabled {
-  cursor: not-allowed;
-  opacity: 0.65;
-}
-
-/* Buttons */
-
-.student-attendance-card button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  min-height: 49px;
-  margin-top: 12px;
-  padding: 13px 18px;
-  color: #ffffff;
-  background: linear-gradient(135deg, #2563eb, #4f46e5);
-  border: 1px solid transparent;
-  border-radius: 11px;
   cursor: pointer;
-  font: inherit;
-  font-size: 14px;
-  font-weight: 750;
-  transition:
-    transform 0.2s ease,
-    box-shadow 0.2s ease,
-    opacity 0.2s ease;
 }
 
-.student-attendance-card button:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 8px 20px rgba(59, 91, 219, 0.22);
+.student-back-button {
+  padding: 8px 0;
+  margin-bottom: 22px;
 }
 
-.student-attendance-card button:active:not(:disabled) {
-  transform: translateY(0);
+.student-back-button:hover,
+.student-text-button:hover {
+  color: var(--primary, #4f46e5);
 }
 
-.student-attendance-card button:focus-visible {
-  outline: 3px solid rgba(59, 91, 219, 0.3);
-  outline-offset: 3px;
+.student-attendance-header {
+  text-align: center;
+  margin: 0 auto 26px;
 }
 
-.student-attendance-card button:disabled {
-  cursor: not-allowed;
-  opacity: 0.65;
+.student-attendance-logo,
+.student-panel-icon {
+  display: grid;
+  place-items: center;
+  margin: 0 auto 14px;
+  color: #fff;
+  background: linear-gradient(135deg, #4f46e5, #6366f1);
+  box-shadow: 0 10px 24px rgba(79, 70, 229, 0.2);
 }
 
-/* Second button: Use Another Code */
-
-.student-attendance-card form button[type="button"] {
-  margin-top: 2px;
-  color: #40516f;
-  background: #ffffff;
-  border-color: #dce3ee;
-  box-shadow: none;
+.student-attendance-logo {
+  width: 54px;
+  height: 54px;
+  border-radius: 17px;
 }
 
-.student-attendance-card form button[type="button"]:hover:not(:disabled) {
-  color: #254fc4;
-  background: #f5f8ff;
-  border-color: #b8c9f5;
+.student-eyebrow {
+  margin: 0 0 8px;
+  color: var(--primary, #4f46e5);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.13em;
 }
 
-/* Messages */
+.student-attendance-header h1 {
+  margin: 0;
+  color: var(--text-primary, #172033);
+  font-size: clamp(1.75rem, 5vw, 2.25rem);
+  line-height: 1.2;
+  letter-spacing: -0.04em;
+}
 
-.student-attendance-error,
-.student-attendance-success,
-.student-session-notice {
-  width: 100%;
-  margin: 10px 0;
-  padding: 12px 14px;
-  border-radius: 10px;
-  font-size: 13px;
+.student-subtitle {
+  max-width: 470px;
+  margin: 12px auto 0;
+  color: var(--text-secondary, #667085);
+  line-height: 1.65;
+  font-size: 0.96rem;
+}
+
+.student-panel {
+  padding: clamp(22px, 5vw, 34px);
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 22px;
+  background: var(--card-background, #fff);
+  box-shadow: 0 18px 50px rgba(20, 28, 50, 0.07);
+}
+
+.student-panel-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 15px;
+}
+
+.student-panel h2 {
+  margin: 0;
+  text-align: center;
+  font-size: 1.35rem;
+  letter-spacing: -0.025em;
+}
+
+.student-panel-copy {
+  margin: 9px 0 24px;
+  color: var(--text-secondary, #667085);
+  font-size: 0.92rem;
   line-height: 1.6;
-  overflow-wrap: anywhere;
-}
-
-.student-attendance-error {
-  color: #b42332;
-  background: #fff1f2;
-  border: 1px solid #fecdd3;
-}
-
-.student-attendance-success {
-  color: #147344;
-  background: #ecfdf3;
-  border: 1px solid #b7ebcd;
-}
-
-.student-session-notice {
-  color: #254fc4;
-  background: #eff5ff;
-  border: 1px solid #cbdcff;
-}
-
-/* Help text */
-
-.student-attendance-help {
-  margin: 22px 0 0;
-  color: #78859a;
-  font-size: 12px;
-  line-height: 1.8;
   text-align: center;
 }
 
-/* Animation */
-
-@keyframes studentCardAppear {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.student-panel form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-/* Tablet */
-
-@media (max-width: 768px) {
-  .student-attendance-page {
-    padding: 28px 16px;
-  }
-
-  .student-attendance-card {
-    max-width: 470px;
-    padding: 32px;
-    border-radius: 21px;
-  }
+.student-panel label {
+  margin-top: 7px;
+  color: var(--text-primary, #344054);
+  font-size: 0.88rem;
+  font-weight: 700;
 }
 
-/* Mobile */
+.student-panel input,
+.student-panel select {
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  padding: 11px 13px;
+  border: 1px solid var(--input-border, #d0d5dd);
+  border-radius: 11px;
+  outline: none;
+  color: var(--text-primary, #172033);
+  background: var(--input-background, #fff);
+  font: inherit;
+  font-size: 0.95rem;
+  box-sizing: border-box;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
 
-@media (max-width: 480px) {
+.student-panel input:focus,
+.student-panel select:focus {
+  border-color: var(--primary, #4f46e5);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+}
+
+#attendance-code {
+  min-height: 58px;
+  text-align: center;
+  text-transform: uppercase;
+  font-size: 1.45rem;
+  font-weight: 800;
+  letter-spacing: 0.17em;
+}
+
+.student-primary-button,
+.student-secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+  transition: transform 0.15s ease, opacity 0.15s ease, background 0.15s ease;
+}
+
+.student-primary-button {
+  margin-top: 10px;
+  border: 1px solid var(--primary, #4f46e5);
+  color: #fff;
+  background: var(--primary, #4f46e5);
+}
+
+.student-primary-button:hover:not(:disabled) {
+  background: var(--primary-hover, #4338ca);
+  transform: translateY(-1px);
+}
+
+.student-secondary-button {
+  border: 1px solid var(--border-color, #d0d5dd);
+  color: var(--text-primary, #344054);
+  background: var(--card-background, #fff);
+}
+
+.student-secondary-button:hover:not(:disabled) {
+  border-color: var(--primary, #4f46e5);
+  background: var(--surface-secondary, #f8faff);
+}
+
+.student-primary-button:disabled,
+.student-secondary-button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.student-security-note,
+.student-location-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  color: var(--text-secondary, #667085);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.student-security-note {
+  justify-content: center;
+  margin: 19px 0 0;
+  text-align: center;
+}
+
+.student-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.student-form-grid > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.student-location-box {
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 14px;
+  background: var(--surface-secondary, #f8fafc);
+}
+
+.student-location-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 14px;
+  color: var(--primary, #4f46e5);
+}
+
+.student-location-heading strong {
+  display: block;
+  color: var(--text-primary, #172033);
+  font-size: 0.92rem;
+}
+
+.student-location-heading p {
+  margin: 4px 0 0;
+  color: var(--text-secondary, #667085);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.student-location-message {
+  margin: 10px 0 0;
+}
+
+.student-verified-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-bottom: 14px;
+  color: #15803d;
+  font-size: 0.86rem;
+  font-weight: 750;
+}
+
+.student-text-button {
+  justify-content: center;
+  align-self: center;
+  margin-top: 8px;
+  padding: 8px;
+  font-size: 0.88rem;
+}
+
+.student-alert {
+  margin: 0 0 16px;
+  padding: 13px 15px;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.student-alert-error {
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  background: #fef2f2;
+}
+
+.student-success-panel {
+  text-align: center;
+}
+
+.student-success-icon {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 16px;
+  border-radius: 50%;
+  color: #15803d;
+  background: #dcfce7;
+}
+
+.student-success-panel > p {
+  color: var(--text-secondary, #667085);
+  line-height: 1.6;
+}
+
+.student-success-detail {
+  font-size: 0.88rem;
+}
+
+.student-attendance-footer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 7px;
+  margin-top: 22px;
+  color: var(--text-secondary, #667085);
+  font-size: 0.8rem;
+}
+
+.student-spin {
+  animation: student-spin 0.9s linear infinite;
+}
+
+@keyframes student-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 520px) {
   .student-attendance-page {
-    align-items: flex-start;
-    padding: 22px 13px;
+    padding: 18px 12px 28px;
   }
 
-  .student-attendance-card {
-    padding: 25px 19px;
+  .student-back-button {
+    margin-bottom: 16px;
+  }
+
+  .student-attendance-header {
+    margin-bottom: 20px;
+  }
+
+  .student-panel {
+    padding: 21px 17px;
     border-radius: 18px;
   }
 
-  .student-attendance-brand {
-    margin-bottom: 18px;
-    font-size: 16px;
-  }
-
-  .student-attendance-card h1 {
-    font-size: 25px;
-  }
-
-  .student-attendance-description {
-    margin-bottom: 22px;
-    font-size: 13px;
-  }
-
-  .student-attendance-card input,
-  .student-attendance-card select {
-    min-height: 47px;
-    font-size: 14px;
-  }
-
-  .student-attendance-card button {
-    min-height: 47px;
-  }
-
-  .student-attendance-help {
-    margin-top: 18px;
+  .student-form-grid {
+    grid-template-columns: 1fr;
+    gap: 0;
   }
 }
+/* ===== AttendX Student Attendance UI Improvements ===== */
 
-/* Reduced motion accessibility */
+.student-attendance-page {
+min-height: 100svh;
+box-sizing: border-box;
+padding: 12px 20px;
+display: flex;
+align-items: center;
+justify-content: center;
+background:
+radial-gradient(ellipse at 12% 5%, rgba(99, 102, 241, 0.14), transparent 35%),
+radial-gradient(ellipse at 90% 90%, rgba(14, 165, 233, 0.08), transparent 32%),
+var(--background, #f5f7fb);
+}
+
+.student-attendance-shell {
+width: 100%;
+max-width: 680px;
+margin: auto;
+}
+
+/* Back to Home button */
+.student-back-button {
+display: inline-flex;
+align-items: center;
+justify-content: center;
+gap: 8px;
+min-height: 40px;
+padding: 9px 15px;
+margin: 0 0 12px;
+border: 1px solid #e0e4f0;
+border-radius: 12px;
+background: #fff;
+color: #475467;
+box-shadow: 0 3px 10px rgba(30, 41, 59, 0.05);
+font-size: 14px;
+font-weight: 650;
+text-decoration: none;
+cursor: pointer;
+transition: all 0.2s ease;
+}
+
+.student-back-button {
+color: #4338ca;
+border-color: #c7d2fe;
+background: #f8faff;
+transform: translateY(-1px);
+}
+
+.student-attendance-header {
+margin-bottom: 16px;
+}
+
+.student-attendance-logo {
+width: 48px;
+height: 48px;
+margin-bottom: 9px;
+border-radius: 15px;
+}
+
+.student-attendance-header h1 {
+font-size: clamp(1.65rem, 3.5vw, 2.1rem);
+line-height: 1.15;
+}
+
+.student-subtitle {
+margin-top: 8px;
+line-height: 1.5;
+font-size: 0.91rem;
+}
+
+.student-panel {
+padding: 23px clamp(18px, 4vw, 30px);
+border: 1px solid #e5e8f1;
+border-radius: 22px;
+background: rgba(255, 255, 255, 0.97);
+box-shadow: 0 16px 42px rgba(30, 41, 59, 0.08);
+}
+
+.student-panel-icon {
+width: 42px;
+height: 42px;
+margin-bottom: 9px;
+border-radius: 13px;
+}
+
+.student-panel h2 {
+font-size: 1.25rem;
+}
+
+.student-panel-copy {
+margin: 7px 0 17px;
+font-size: 0.88rem;
+line-height: 1.5;
+}
+
+.student-panel form {
+gap: 8px;
+}
+
+.student-panel label {
+margin-top: 4px;
+}
+
+.student-panel input,
+.student-panel select {
+min-height: 44px;
+border-radius: 11px;
+}
+
+#attendance-code {
+min-height: 53px;
+font-size: 1.35rem;
+letter-spacing: 0.15em;
+}
+
+.student-primary-button,
+.student-secondary-button {
+min-height: 46px;
+border-radius: 11px;
+}
+
+.student-primary-button {
+margin-top: 7px;
+background: linear-gradient(135deg, #4f46e5, #6258f2);
+box-shadow: 0 6px 16px rgba(79, 70, 229, 0.17);
+}
+
+.student-primary-button:hover() {
+background: linear-gradient(135deg, #4338ca, #4f46e5);
+box-shadow: 0 8px 20px rgba(79, 70, 229, 0.23);
+}
+
+.student-security-note {
+margin-top: 12px;
+font-size: 0.77rem;
+}
+
+.student-attendance-footer {
+margin-top: 11px;
+font-size: 0.77rem;
+}
+
+/* Keep the initial code screen compact on laptop screens */
+@media (min-width: 700px) and (min-height: 760px) {
+.student-attendance-page {
+padding-top: 10px;
+padding-bottom: 10px;
+}
+
+.student-attendance-header {
+margin-bottom: 13px;
+}
+
+.student-panel {
+padding-top: 20px;
+padding-bottom: 19px;
+}
+}
+
+/* Mobile and tablet */
+@media (max-width: 699px) {
+.student-attendance-page {
+min-height: 100svh;
+align-items: flex-start;
+padding: 15px 12px 22px;
+}
+
+.student-back-button {
+margin-bottom: 16px;
+}
+
+.student-attendance-header {
+margin-bottom: 18px;
+}
+
+.student-panel {
+padding: 21px 17px;
+border-radius: 18px;
+}
+
+.student-form-grid {
+grid-template-columns: 1fr;
+gap: 0;
+}
+}
+
+/* Short laptop screens */
+@media (max-height: 760px) and (min-width: 700px) {
+.student-attendance-page {
+align-items: flex-start;
+padding-top: 8px;
+padding-bottom: 10px;
+}
+
+.student-attendance-logo {
+width: 40px;
+height: 40px;
+margin-bottom: 6px;
+}
+
+.student-attendance-header {
+margin-bottom: 10px;
+}
+
+.student-panel {
+padding-top: 16px;
+padding-bottom: 15px;
+}
+
+.student-panel-copy {
+margin-bottom: 12px;
+}
+
+.student-attendance-footer {
+margin-top: 8px;
+}
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .student-attendance-card {
-    animation: none;
-  }
-
-  .student-attendance-card *,
-  .student-attendance-card *::before,
-  .student-attendance-card *::after {
-    transition: none !important;
-  }
+.student-back-button,
+.student-primary-button,
+.student-secondary-button {
+transition: none;
+}
 }

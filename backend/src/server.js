@@ -139,12 +139,115 @@ app.use((err, req, res, next) => {
 
 let server
 let isShuttingDown = false
+let attendanceLockCleanupTimer
+
+const ATTENDANCE_LOCK_CLEANUP_INTERVAL_MS = 30 * 1000
+
+// Close expired attendance sessions and release only their device locks.
+// Attendance records are intentionally preserved.
+async function cleanupExpiredAttendanceSessions() {
+  const now = new Date()
+
+  const expiredSessions = await prisma.attendanceSession.findMany({
+    where: {
+      status: 'ACTIVE',
+      endsAt: { lte: now },
+    },
+    select: {
+      id: true,
+    },
+    take: 200,
+  })
+
+  for (const expiredSession of expiredSessions) {
+    await prisma.$transaction(async (tx) => {
+      // Serialize expiry cleanup against attendance submissions and manual closure.
+      await tx.$queryRaw`
+        SELECT id
+        FROM "AttendanceSession"
+        WHERE id = ${expiredSession.id}::uuid
+        FOR UPDATE
+      `
+
+      const currentSession = await tx.attendanceSession.findUnique({
+        where: { id: expiredSession.id },
+        select: {
+          id: true,
+          status: true,
+          endsAt: true,
+        },
+      })
+
+      const cleanupTime = new Date()
+
+      if (
+        !currentSession ||
+        currentSession.status !== 'ACTIVE' ||
+        !currentSession.endsAt ||
+        currentSession.endsAt > cleanupTime
+      ) {
+        return
+      }
+
+      await tx.attendanceSession.update({
+        where: { id: currentSession.id },
+        data: { status: 'CLOSED' },
+      })
+
+      await tx.qrCodeToken.updateMany({
+        where: {
+          attendanceSessionId: currentSession.id,
+          expiresAt: { gt: cleanupTime },
+        },
+        data: { expiresAt: cleanupTime },
+      })
+
+      await tx.attendanceDeviceLock.deleteMany({
+        where: {
+          attendanceSessionId: currentSession.id,
+        },
+      })
+    })
+  }
+
+  if (expiredSessions.length > 0) {
+    console.log(
+      `🧹 Expired attendance-session cleanup checked ${expiredSessions.length} session(s).`
+    )
+  }
+}
+
+function startAttendanceLockCleanup() {
+  const runCleanup = async () => {
+    try {
+      await cleanupExpiredAttendanceSessions()
+    } catch (error) {
+      console.error(
+        '❌ Expired attendance-session cleanup failed:',
+        error.message
+      )
+    }
+  }
+
+  // Run once on startup, then periodically while the server is running.
+  void runCleanup()
+
+  attendanceLockCleanupTimer = setInterval(
+    () => void runCleanup(),
+    ATTENDANCE_LOCK_CLEANUP_INTERVAL_MS
+  )
+
+  // Do not keep the process alive solely for this timer.
+  attendanceLockCleanupTimer.unref?.()
+}
 
 // Start the backend and verify the database connection.
 async function startServer() {
   try {
     await prisma.$connect()
     await prisma.$queryRaw`SELECT 1`
+
+    startAttendanceLockCleanup()
 
     server = app.listen(PORT, () => {
       console.log('')
@@ -204,6 +307,11 @@ async function shutdown(signal) {
   if (isShuttingDown) return
 
   isShuttingDown = true
+
+  if (attendanceLockCleanupTimer) {
+    clearInterval(attendanceLockCleanupTimer)
+    attendanceLockCleanupTimer = undefined
+  }
 
   console.log(`\n🛑 Received ${signal}. Shutting down AttendX backend...`)
 

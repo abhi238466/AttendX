@@ -1,4 +1,3 @@
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -96,9 +95,9 @@ model Teacher {
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt
 
-  reviewer           Admin?             @relation("TeacherReviewer", fields: [reviewedByAdminId], references: [id], onDelete: Restrict)
+  reviewer           Admin?              @relation("TeacherReviewer", fields: [reviewedByAdminId], references: [id], onDelete: Restrict)
   attendanceSessions AttendanceSession[]
-  correctedRecords   AttendanceRecord[] @relation("AttendanceCorrection")
+  correctedRecords   AttendanceRecord[]  @relation("AttendanceCorrection")
 
   @@index([fullName])
   @@index([phone])
@@ -106,16 +105,15 @@ model Teacher {
   @@index([status, createdAt])
 }
 
-
 model AttendanceSession {
   id        String @id @default(uuid()) @db.Uuid
   teacherId String @db.Uuid
 
   // Session header
-  courseName  String  @db.VarChar(150)
-  subjectName String? @db.VarChar(150)
-  className   String? @db.VarChar(100)
-  roomName    String? @db.VarChar(100)
+  courseName  String   @db.VarChar(150)
+  subjectName String?  @db.VarChar(150)
+  className   String?  @db.VarChar(100)
+  roomName    String?  @db.VarChar(100)
   sections    String[]
 
   // Teacher's captured classroom location and chosen radius
@@ -131,18 +129,19 @@ model AttendanceSession {
   attendanceWindowEndsAt DateTime?
 
   // Actual session lifecycle
-  status     AttendanceSessionStatus @default(ACTIVE)
-  startsAt   DateTime                @default(now())
-  endsAt     DateTime?
-  createdAt  DateTime                @default(now())
-  updatedAt  DateTime                @updatedAt
+  status    AttendanceSessionStatus @default(ACTIVE)
+  startsAt  DateTime                @default(now())
+  endsAt    DateTime?
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
 
   teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Restrict)
 
-  records    AttendanceRecord[]
-  qrTokens   QrCodeToken[]
-  attempts   AttendanceAttempt[]
-  challenges AttendanceChallenge[]
+  records     AttendanceRecord[]
+  qrTokens    QrCodeToken[]
+  attempts    AttendanceAttempt[]
+  challenges  AttendanceChallenge[]
+  deviceLocks AttendanceDeviceLock[]
 
   @@index([teacherId, status])
   @@index([teacherId, startsAt])
@@ -150,12 +149,12 @@ model AttendanceSession {
 }
 
 model QrCodeToken {
-  id                  String             @id @default(uuid()) @db.Uuid
-  attendanceSessionId String             @db.Uuid
+  id                  String              @id @default(uuid()) @db.Uuid
+  attendanceSessionId String              @db.Uuid
   tokenType           AttendanceTokenType @default(QR)
-  tokenHash           String             @unique @db.VarChar(128)
+  tokenHash           String              @unique @db.VarChar(128)
   expiresAt           DateTime
-  createdAt           DateTime           @default(now())
+  createdAt           DateTime            @default(now())
 
   attendanceSession AttendanceSession @relation(fields: [attendanceSessionId], references: [id], onDelete: Cascade)
 
@@ -164,30 +163,30 @@ model QrCodeToken {
 }
 
 model AttendanceRecord {
-  id                             String           @id @default(uuid()) @db.Uuid
-  attendanceSessionId            String           @db.Uuid
-  fullName                       String           @db.VarChar(120)
-  classRollNumber                String           @db.VarChar(50)
-  universityRollNumber           String           @db.VarChar(80)
-  normalizedUniversityRollNumber String           @db.VarChar(80)
-  section                        String           @db.VarChar(50)
+  id                             String @id @default(uuid()) @db.Uuid
+  attendanceSessionId            String @db.Uuid
+  fullName                       String @db.VarChar(120)
+  classRollNumber                String @db.VarChar(50)
+  universityRollNumber           String @db.VarChar(80)
+  normalizedUniversityRollNumber String @db.VarChar(80)
+  section                        String @db.VarChar(50)
 
   // Location submitted by the student
-  latitude                       Float?
-  longitude                      Float?
-  locationAccuracyMeters         Float?
-  distanceMeters                 Float?
+  latitude               Float?
+  longitude              Float?
+  locationAccuracyMeters Float?
+  distanceMeters         Float?
 
-  status                         AttendanceStatus @default(PRESENT)
-  riskFlags                      String[]         @default([])
+  status    AttendanceStatus @default(PRESENT)
+  riskFlags String[]         @default([])
 
   // Teacher-authorised corrections
-  correctionReason               String?          @db.VarChar(1000)
-  correctedByTeacherId           String?          @db.Uuid
-  correctedAt                    DateTime?
+  correctionReason     String?   @db.VarChar(1000)
+  correctedByTeacherId String?   @db.Uuid
+  correctedAt          DateTime?
 
-  submittedAt                    DateTime         @default(now())
-  updatedAt                      DateTime         @updatedAt
+  submittedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   attendanceSession AttendanceSession @relation(fields: [attendanceSessionId], references: [id], onDelete: Restrict)
   correctedBy       Teacher?          @relation("AttendanceCorrection", fields: [correctedByTeacherId], references: [id], onDelete: Restrict)
@@ -202,12 +201,12 @@ model AttendanceRecord {
 }
 
 model AttendanceAttempt {
-  id                             String                   @id @default(uuid()) @db.Uuid
-  attendanceSessionId            String                   @db.Uuid
-  normalizedUniversityRollNumber String?                  @db.VarChar(80)
+  id                             String  @id @default(uuid()) @db.Uuid
+  attendanceSessionId            String  @db.Uuid
+  normalizedUniversityRollNumber String? @db.VarChar(80)
 
   outcome                AttendanceAttemptOutcome
-  riskFlags              String[] @default([])
+  riskFlags              String[]                 @default([])
   latitude               Float?
   longitude              Float?
   locationAccuracyMeters Float?
@@ -259,23 +258,37 @@ model OtpChallenge {
 
 // Persistent teacher login lockout: survives backend restarts.
 model TeacherLoginLockout {
-  email          String   @id @db.VarChar(254)
-  failedAttempts Int      @default(0)
+  email          String    @id @db.VarChar(254)
+  failedAttempts Int       @default(0)
   lockedUntil    DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 }
 
 model AttendanceChallenge {
-  id                  String   @id @default(uuid()) @db.Uuid
-  attendanceSessionId String   @db.Uuid
-  tokenHash           String   @unique @db.VarChar(128)
+  id                  String    @id @default(uuid()) @db.Uuid
+  attendanceSessionId String    @db.Uuid
+  tokenHash           String    @unique @db.VarChar(128)
   expiresAt           DateTime
   consumedAt          DateTime?
-  createdAt           DateTime @default(now())
+  createdAt           DateTime  @default(now())
 
   attendanceSession AttendanceSession @relation(fields: [attendanceSessionId], references: [id], onDelete: Cascade)
 
   @@index([attendanceSessionId, expiresAt])
   @@index([attendanceSessionId, consumedAt])
+}
+
+// Device lock for one specific attendance session.
+// Only the hash of the device token is stored.
+model AttendanceDeviceLock {
+  id                  String   @id @default(uuid()) @db.Uuid
+  attendanceSessionId String   @db.Uuid
+  deviceTokenHash     String   @db.VarChar(64)
+  createdAt           DateTime @default(now())
+
+  attendanceSession AttendanceSession @relation(fields: [attendanceSessionId], references: [id], onDelete: Cascade)
+
+  @@unique([attendanceSessionId, deviceTokenHash])
+  @@index([attendanceSessionId])
 }
