@@ -585,3 +585,23 @@ margin-top: 8px;
 transition: none;
 }
 }
+
+/* Student error toast: fixed on the right and automatically dismissed by StudentAttendance.jsx */
+.student-alert {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 1000;
+  width: min(420px, calc(100vw - 40px));
+  box-sizing: border-box;
+  margin: 0;
+  box-shadow: 0 12px 32px rgba(20, 28, 50, 0.16);
+}
+
+@media (max-width: 520px) {
+  .student-alert {
+    top: 12px;
+    right: 12px;
+    width: calc(100vw - 24px);
+  }
+}

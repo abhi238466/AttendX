@@ -93,6 +93,16 @@ export default function StudentAttendance() {
   const [success, setSuccess] = useState('')
 
   useEffect(() => {
+    if (!error) return
+
+    const timeoutId = window.setTimeout(() => {
+      setError('')
+    }, 4000)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [error])
+
+  useEffect(() => {
     if (!initialToken) return
 
     const key = `${initialSessionId}:${initialToken}`

@@ -69,6 +69,16 @@ const [refreshing, setRefreshing] = useState(false)
 const [closing, setClosing] = useState(false)
 const [error, setError] = useState('')
 const [notice, setNotice] = useState('')
+
+useEffect(() => {
+  if (!notice) return undefined
+
+  const noticeTimer = window.setTimeout(() => {
+    setNotice('')
+  }, 4000)
+
+  return () => window.clearTimeout(noticeTimer)
+}, [notice])
 const [closed, setClosed] = useState(false)
 const [showCloseConfirm, setShowCloseConfirm] = useState(false)
 const refreshInFlightRef = useRef(false)

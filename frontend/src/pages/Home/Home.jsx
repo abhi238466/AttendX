@@ -146,6 +146,13 @@ function Home() {
               <GraduationCap size={15} aria-hidden="true" />
               Teacher
             </Link>
+            <Link
+              className="home-header-role home-header-role-student"
+              to="/student/attendance"
+            >
+              <Smartphone size={15} aria-hidden="true" />
+              Student
+            </Link>
             <a className="home-header-cta" href="#access">
               Explore access
             </a>

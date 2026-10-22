@@ -2477,3 +2477,336 @@
     min-height: 400px;
   }
 }
+
+
+/* Final mobile-only layout fixes.
+   Existing desktop/tablet styles and all page content remain unchanged. */
+@media (max-width: 700px) {
+  .home-page {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: clip;
+  }
+
+  .home-container {
+    width: calc(100% - 32px);
+    max-width: 100%;
+  }
+
+  .home-header-inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .home-brand {
+    min-width: 0;
+    justify-self: start;
+  }
+
+  .home-header-actions {
+    width: 100%;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    margin: 0;
+  }
+
+  .home-header-role {
+    width: 100%;
+    min-width: 0;
+    min-height: 36px;
+    gap: 4px;
+    padding-inline: 5px;
+    font-size: 10px;
+    white-space: nowrap;
+  }
+
+  .home-header-role svg {
+    width: 13px;
+    height: 13px;
+    flex-shrink: 0;
+  }
+
+  .home-header-cta {
+    display: none;
+  }
+
+  .home-nav {
+    grid-column: 1;
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .home-nav a {
+    min-height: 34px;
+    padding-inline: 9px;
+    font-size: 10px;
+  }
+
+  .home-hero {
+    padding-top: 32px;
+  }
+
+  .home-hero-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .home-hero-content,
+  .home-hero-visual {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .home-hero h1 {
+    max-width: 100%;
+    font-size: clamp(36px, 9vw, 48px);
+    line-height: 1.08;
+    letter-spacing: -1.8px;
+    overflow-wrap: break-word;
+  }
+
+  .home-hero-description {
+    max-width: 100%;
+    font-size: 13px;
+    line-height: 1.8;
+  }
+
+  .home-hero-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .home-hero-visual {
+    min-height: 390px;
+    padding: 12px 0 30px;
+    overflow: visible;
+  }
+
+  .home-orbit-one {
+    width: min(84vw, 330px);
+    height: min(84vw, 330px);
+  }
+
+  .home-orbit-two {
+    width: min(67vw, 265px);
+    height: min(67vw, 265px);
+  }
+
+  .home-qr-card {
+    width: min(270px, 72%);
+    margin-bottom: 18px;
+    padding: 14px;
+  }
+
+  .home-float-card {
+    max-width: 63%;
+    min-width: 0;
+    padding: 8px 9px;
+    gap: 7px;
+  }
+
+  .home-float-top {
+    top: 22px;
+    right: 0;
+  }
+
+  .home-float-bottom {
+    bottom: 38px;
+    left: 0;
+  }
+
+  .home-visual-caption {
+    bottom: 0;
+    padding-inline: 4px;
+    font-size: 7px;
+    letter-spacing: 0.5px;
+    text-align: center;
+  }
+}
+
+@media (max-width: 380px) {
+  .home-container {
+    width: calc(100% - 24px);
+  }
+
+  .home-header-inner {
+    padding: 8px;
+  }
+
+  .home-header-actions {
+    gap: 4px;
+  }
+
+  .home-header-role {
+    gap: 3px;
+    padding-inline: 3px;
+    font-size: 9px;
+  }
+
+  .home-header-role svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .home-nav {
+    gap: 4px;
+  }
+
+  .home-nav a {
+    padding-inline: 7px;
+    font-size: 9px;
+  }
+
+  .home-hero h1 {
+    font-size: 35px;
+    letter-spacing: -1.6px;
+  }
+
+  .home-hero-visual {
+    min-height: 350px;
+  }
+
+  .home-qr-card {
+    width: 70%;
+    padding: 11px;
+  }
+
+  .home-float-card {
+    max-width: 65%;
+    padding: 7px;
+  }
+}
+
+
+/* =========================================================
+   FINAL FIX: fixed mobile navbar + footer alignment
+   Appended overrides only. Existing styles above are preserved.
+   ========================================================= */
+
+@media (max-width: 700px) {
+  /* Keep the complete navbar pinned to the top while scrolling. */
+  .home-header {
+    position: fixed;
+    top: 0;
+    right: 0;
+    left: 0;
+    z-index: 1000;
+    width: 100%;
+    padding: 6px 0;
+    background: rgba(255, 255, 255, 0.98);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  /* Reserve space for the multi-row fixed navbar so it does not cover content. */
+  .home-page {
+    padding-top: 0;
+  }
+
+  .home-hero {
+    padding-top: 205px;
+  }
+
+  /* Keep the navbar panel within the phone width. */
+  .home-header-inner {
+    width: calc(100% - 24px);
+    max-width: 1160px;
+    margin-inline: auto;
+    box-shadow: 0 8px 28px rgba(47, 39, 115, 0.09);
+  }
+
+  /* Align footer logo and text cleanly on narrow screens. */
+  .home-footer {
+    padding-block: 22px;
+  }
+
+  .home-footer-inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 12px;
+    row-gap: 12px;
+  }
+
+  .home-footer-inner .home-brand {
+    min-width: 0;
+  }
+
+  .home-footer-inner > p {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+    margin: 0;
+    text-align: left;
+    line-height: 1.7;
+    overflow-wrap: anywhere;
+  }
+
+  .home-footer-copy {
+    grid-column: 2;
+    grid-row: 1;
+    margin: 0;
+    padding: 0;
+    text-align: right;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 380px) {
+  /* Slightly shorter reserved space on very small phones. */
+  .home-hero {
+    padding-top: 198px;
+  }
+
+  .home-footer-inner {
+    column-gap: 8px;
+  }
+
+  .home-brand-footer {
+    gap: 7px;
+  }
+
+  .home-brand-footer .home-brand-name {
+    font-size: 16px;
+  }
+
+  .home-footer-copy {
+    font-size: 9px;
+  }
+
+  .home-footer-inner > p {
+    font-size: 10px;
+  }
+}
+
+
+/* Navbar behavior requested: scrolls away with the page; does not stay fixed while scrolling. */
+@media (max-width: 700px) {
+  .home-header {
+    position: static;
+    top: auto;
+    right: auto;
+    left: auto;
+    width: auto;
+    background: rgba(255, 255, 255, 0.98);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .home-hero {
+    padding-top: 32px;
+  }
+}
+
+@media (max-width: 380px) {
+  .home-hero {
+    padding-top: 32px;
+  }
+}
