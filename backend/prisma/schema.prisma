@@ -407,3 +407,15 @@ model GeofenceZone {
   @@index([isActive])
   @@index([areaName])
 }
+
+
+model AdminLoginLockout {
+  email          String    @id @db.VarChar(254)
+  failedAttempts Int       @default(0)
+  lockedUntil    DateTime?
+  lastAttemptAt  DateTime  @default(now())
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([lockedUntil])
+}

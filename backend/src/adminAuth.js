@@ -12,64 +12,11 @@ const OTP_EXPIRY_MS = 5 * 60 * 1000
 const RESET_TOKEN_EXPIRY_MS = 10 * 60 * 1000
 const MAX_OTP_ATTEMPTS = 5
 
-// Login lockout is kept in this process's memory.
-// For multiple backend instances or lockout that must survive restarts,
-// use a shared store (for example, PostgreSQL or Redis).
 const MAX_LOGIN_ATTEMPTS = 5
 const LOGIN_LOCKOUT_MS = 15 * 60 * 1000
-const loginAttempts = new Map()
-
-function getLoginAttemptKey(req) {
-  // Lock by client IP, not email, so changing the email cannot bypass lockout.
-  return req.ip || req.socket?.remoteAddress || 'unknown'
-}
-
-function getActiveLoginLock(key, now = Date.now()) {
-  const record = loginAttempts.get(key)
-
-  if (!record) return null
-
-  if (record.lockedUntil && record.lockedUntil > now) {
-    return record.lockedUntil
-  }
-
-  if (record.lockedUntil && record.lockedUntil <= now) {
-    loginAttempts.delete(key)
-    return null
-  }
-
-  return null
-}
-
-function recordFailedLogin(key, now = Date.now()) {
-  // Remove expired lockouts and stale, non-locked records as requests arrive.
-  for (const [storedKey, record] of loginAttempts) {
-    if (
-      (record.lockedUntil && record.lockedUntil <= now) ||
-      (!record.lockedUntil && now - record.lastAttemptAt > LOGIN_LOCKOUT_MS)
-    ) {
-      loginAttempts.delete(storedKey)
-    }
-  }
-
-  const current = loginAttempts.get(key) || { count: 0, lastAttemptAt: now }
-  current.count += 1
-  current.lastAttemptAt = now
-
-  if (current.count >= MAX_LOGIN_ATTEMPTS) {
-    current.lockedUntil = now + LOGIN_LOCKOUT_MS
-  }
-
-  loginAttempts.set(key, current)
-  return current
-}
-
-function clearLoginAttempts(key) {
-  loginAttempts.delete(key)
-}
 
 function sendLoginLockedResponse(res, lockedUntil) {
-  const remainingSeconds = Math.max(1, Math.ceil((lockedUntil - Date.now()) / 1000))
+  const remainingSeconds = Math.max(1, Math.ceil((lockedUntil.getTime() - Date.now()) / 1000))
   const remainingMinutes = Math.max(1, Math.ceil(remainingSeconds / 60))
 
   return res.status(429).json({
@@ -147,17 +94,6 @@ const resetLimiter = rateLimit({
   message: {
     success: false,
     message: 'Too many password reset attempts. Please try again later.',
-  },
-})
-
-const adminLoginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    success: false,
-    message: 'Too many Admin login requests. Please try again after 15 minutes.',
   },
 })
 
@@ -436,7 +372,7 @@ router.post('/verify-registration-otp', otpVerifyLimiter, async (req, res, next)
 })
 
 // Admin login
-router.post('/login', adminLoginLimiter, async (req, res, next) => {
+router.post('/login', async (req, res, next) => {
   try {
     const parsed = loginSchema.safeParse(req.body)
 
@@ -448,38 +384,93 @@ router.post('/login', adminLoginLimiter, async (req, res, next) => {
     }
 
     const email = normalizeEmail(parsed.data.email)
-    const loginAttemptKey = getLoginAttemptKey(req)
-    const lockedUntil = getActiveLoginLock(loginAttemptKey)
 
-    if (lockedUntil) {
-      return sendLoginLockedResponse(res, lockedUntil)
-    }
+    const loginResult = await prisma.$transaction(async (tx) => {
+     await tx.$queryRaw`SELECT 1::int AS locked FROM (SELECT pg_advisory_xact_lock(hashtextextended(${email}, 0))) AS lock_result`
 
-    const admin = await prisma.admin.findUnique({
-      where: { email },
-    })
+      const now = new Date()
+      let lockout = await tx.adminLoginLockout.findUnique({
+        where: { email },
+      })
 
-    const passwordMatches = admin
-      ? await bcrypt.compare(parsed.data.password, admin.passwordHash)
-      : false
-
-    if (!admin || !passwordMatches) {
-      const attempt = recordFailedLogin(loginAttemptKey)
-
-      if (attempt.lockedUntil) {
-        return sendLoginLockedResponse(res, attempt.lockedUntil)
+      if (lockout?.lockedUntil && lockout.lockedUntil > now) {
+        return {
+          status: 'locked',
+          lockedUntil: lockout.lockedUntil,
+        }
       }
 
-      const attemptsRemaining = MAX_LOGIN_ATTEMPTS - attempt.count
+      if (lockout?.lockedUntil && lockout.lockedUntil <= now) {
+        await tx.adminLoginLockout.delete({
+          where: { email },
+        })
+        lockout = null
+      }
 
+      const admin = await tx.admin.findUnique({
+        where: { email },
+      })
+
+      const passwordMatches = admin
+        ? await bcrypt.compare(parsed.data.password, admin.passwordHash)
+        : false
+
+      if (!admin || !passwordMatches) {
+        const failedAttempts = (lockout?.failedAttempts || 0) + 1
+        const lockedUntil = failedAttempts >= MAX_LOGIN_ATTEMPTS
+          ? new Date(now.getTime() + LOGIN_LOCKOUT_MS)
+          : null
+
+        await tx.adminLoginLockout.upsert({
+          where: { email },
+          create: {
+            email,
+            failedAttempts,
+            lockedUntil,
+            lastAttemptAt: now,
+          },
+          update: {
+            failedAttempts,
+            lockedUntil,
+            lastAttemptAt: now,
+          },
+        })
+
+        if (lockedUntil) {
+          return {
+            status: 'locked',
+            lockedUntil,
+          }
+        }
+
+        return {
+          status: 'invalid',
+          attemptsRemaining: MAX_LOGIN_ATTEMPTS - failedAttempts,
+        }
+      }
+
+      await tx.adminLoginLockout.deleteMany({
+        where: { email },
+      })
+
+      return {
+        status: 'success',
+        admin,
+      }
+    })
+
+    if (loginResult.status === 'locked') {
+      return sendLoginLockedResponse(res, loginResult.lockedUntil)
+    }
+
+    if (loginResult.status === 'invalid') {
       return res.status(401).json({
         success: false,
-        message: `Invalid email or password. ${attemptsRemaining} attempt(s) remaining before a 15-minute lockout.`,
+        message: `Invalid email or password. ${loginResult.attemptsRemaining} attempt(s) remaining before a 15-minute lockout.`,
       })
     }
 
-    // A valid password clears the failed-login counter for this email and IP.
-    clearLoginAttempts(loginAttemptKey)
+    const admin = loginResult.admin
 
     if (!req.session) {
       return res.status(500).json({
