@@ -150,6 +150,17 @@ const resetLimiter = rateLimit({
   },
 })
 
+const adminLoginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many Admin login requests. Please try again after 15 minutes.',
+  },
+})
+
 function normalizeEmail(email) {
   return email.trim().toLowerCase()
 }
@@ -241,15 +252,30 @@ async function verifyOtp(challenge, submittedOtp) {
   )
 
   if (!matches) {
-    const nextAttempts = challenge.attempts + 1
-
-    await prisma.otpChallenge.update({
-      where: { id: challenge.id },
+    const updated = await prisma.otpChallenge.updateMany({
+      where: {
+        id: challenge.id,
+        consumedAt: null,
+        expiresAt: { gt: now },
+        attempts: { lt: MAX_OTP_ATTEMPTS },
+      },
       data: {
-        attempts: nextAttempts,
-        ...(nextAttempts >= MAX_OTP_ATTEMPTS
-          ? { consumedAt: now }
-          : {}),
+        attempts: { increment: 1 },
+      },
+    })
+
+    if (updated.count !== 1) {
+      return false
+    }
+
+    await prisma.otpChallenge.updateMany({
+      where: {
+        id: challenge.id,
+        consumedAt: null,
+        attempts: { gte: MAX_OTP_ATTEMPTS },
+      },
+      data: {
+        consumedAt: now,
       },
     })
 
@@ -410,7 +436,7 @@ router.post('/verify-registration-otp', otpVerifyLimiter, async (req, res, next)
 })
 
 // Admin login
-router.post('/login', async (req, res, next) => {
+router.post('/login', adminLoginLimiter, async (req, res, next) => {
   try {
     const parsed = loginSchema.safeParse(req.body)
 
@@ -470,6 +496,7 @@ router.post('/login', async (req, res, next) => {
         email: admin.email,
         role: 'ADMIN',
       }
+      req.session.adminPasswordVersion = hashValue(admin.passwordHash)
 
       req.session.save((saveError) => {
         if (saveError) return next(saveError)
@@ -679,15 +706,52 @@ const updateAdminProfileLimiter = rateLimit({
   },
 })
 
-function requireAdminSession(req, res, next) {
-  if (!req.session?.user || req.session.user.role !== 'ADMIN' || !req.session.user.id) {
-    return res.status(401).json({
-      success: false,
-      message: 'Please sign in as Admin.',
-    })
-  }
+async function requireAdminSession(req, res, next) {
+  try {
+    if (!req.session?.user || req.session.user.role !== 'ADMIN' || !req.session.user.id) {
+      return res.status(401).json({
+        success: false,
+        message: 'Please sign in as Admin.',
+      })
+    }
 
-  next()
+    const admin = await prisma.admin.findUnique({
+      where: { id: req.session.user.id },
+      select: { id: true, passwordHash: true },
+    })
+
+    const sessionVersion = req.session.adminPasswordVersion
+    const currentVersion = admin ? hashValue(admin.passwordHash) : ''
+
+    if (
+      !admin ||
+      typeof sessionVersion !== 'string' ||
+      !safeHashCompare(sessionVersion, currentVersion)
+    ) {
+      await new Promise((resolve, reject) => {
+        req.session.destroy((error) => {
+          if (error) reject(error)
+          else resolve()
+        })
+      })
+
+      res.clearCookie('attendx.sid', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        path: '/',
+      })
+
+      return res.status(401).json({
+        success: false,
+        message: 'Your Admin session is no longer valid. Please sign in again.',
+      })
+    }
+
+    next()
+  } catch (error) {
+    next(error)
+  }
 }
 
 // Get the current Admin profile from the database so photo/name changes

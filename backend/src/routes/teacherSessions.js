@@ -12,9 +12,6 @@ import { requireTeacher } from '../teacherAuth.js'
 
 const router = Router()
 
-const MIN_RADIUS_METERS = 5
-const MAX_RADIUS_METERS = 80
-const DEFAULT_RADIUS_METERS = 25
 const MAX_SESSION_DURATION_MINUTES = 240
 const TOKEN_LIFETIME_SECONDS = 50
 
@@ -30,18 +27,6 @@ const createSessionSchema = z.object({
     .array(z.string().trim().min(1).max(50))
     .min(1)
     .max(30),
-
-  latitude: z.number().finite().min(-90).max(90),
-  longitude: z.number().finite().min(-180).max(180),
-  locationAccuracyMeters: z.number().finite().positive().max(50),
-  locationCapturedAt: z.string().datetime({ offset: true }),
-
-  radiusMeters: z
-    .number()
-    .int()
-    .min(MIN_RADIUS_METERS)
-    .max(MAX_RADIUS_METERS)
-    .default(DEFAULT_RADIUS_METERS),
 
   durationMinutes: z
     .number()
@@ -114,14 +99,9 @@ function sessionResponse(attendanceSession) {
     subjectName: attendanceSession.subjectName,
     className: attendanceSession.className,
     roomName: attendanceSession.roomName,
-    locationAccuracyMeters: attendanceSession.locationAccuracyMeters,
-    locationCapturedAt: attendanceSession.locationCapturedAt,
     scheduledStartsAt: attendanceSession.scheduledStartsAt,
     scheduledEndsAt: attendanceSession.scheduledEndsAt,
     sections: attendanceSession.sections,
-    latitude: attendanceSession.latitude,
-    longitude: attendanceSession.longitude,
-    radiusMeters: attendanceSession.radiusMeters,
     status: sessionHasEnded(attendanceSession)
       ? attendanceSession.status === 'CANCELLED'
         ? 'CANCELLED'
@@ -129,6 +109,7 @@ function sessionResponse(attendanceSession) {
       : attendanceSession.status,
     startsAt: attendanceSession.startsAt,
     endsAt: attendanceSession.endsAt,
+    closedAt: attendanceSession.closedAt,
     createdAt: attendanceSession.createdAt,
     updatedAt: attendanceSession.updatedAt,
   }
@@ -179,30 +160,6 @@ router.post('/', requireTeacher, async (req, res, next) => {
     const sections = normalizeSections(input.sections)
     const scheduledStartsAt = new Date(input.scheduledStartsAt)
     const scheduledEndsAt = new Date(input.scheduledEndsAt)
-    const locationCapturedAt = new Date(input.locationCapturedAt)
-    const locationAgeMs = Date.now() - locationCapturedAt.getTime()
-
-    // Require a fresh classroom reading for each new session.
-    // This freshness check does not prove the GPS coordinates are authentic.
-    // Include timestamp diagnostics so a stale/future reading can be identified
-    // from the Network response without weakening the freshness requirement.
-    if (
-      Number.isNaN(locationCapturedAt.getTime()) ||
-      locationAgeMs < -5000 ||
-      locationAgeMs > 60_000
-    ) {
-      return res.status(400).json({
-        error: 'Capture your current classroom location again before starting attendance.',
-        code: 'LOCATION_READING_STALE',
-        details: {
-          locationCapturedAt: input.locationCapturedAt,
-          serverTime: new Date().toISOString(),
-          locationAgeMs: Number.isFinite(locationAgeMs) ? Math.round(locationAgeMs) : null,
-          allowedAgeMs: { minimum: -5000, maximum: 60000 },
-        },
-      })
-    }
-
     if (
       Number.isNaN(scheduledStartsAt.getTime()) ||
       Number.isNaN(scheduledEndsAt.getTime()) ||
@@ -254,11 +211,13 @@ router.post('/', requireTeacher, async (req, res, next) => {
   FOR UPDATE
 `
 
+      const transactionNow = new Date()
+
       const activeSession = await tx.attendanceSession.findFirst({
         where: {
           teacherId: teacher.id,
           status: 'ACTIVE',
-          endsAt: { gt: now },
+          endsAt: { gt: transactionNow },
         },
         select: {
           id: true,
@@ -283,14 +242,9 @@ router.post('/', requireTeacher, async (req, res, next) => {
           subjectName: input.subjectName,
           className: input.className?.trim() || null,
           roomName: input.roomName?.trim() || null,
-          locationAccuracyMeters: input.locationAccuracyMeters,
-          locationCapturedAt: new Date(input.locationCapturedAt),
           scheduledStartsAt,
           scheduledEndsAt,
           sections,
-          latitude: input.latitude,
-          longitude: input.longitude,
-          radiusMeters: input.radiusMeters,
           status: 'ACTIVE',
           startsAt: now,
           endsAt,
@@ -309,14 +263,9 @@ router.post('/', requireTeacher, async (req, res, next) => {
             subjectName: attendanceSession.subjectName,
             className: attendanceSession.className,
             roomName: attendanceSession.roomName,
-            teacherLatitude: attendanceSession.latitude,
-            teacherLongitude: attendanceSession.longitude,
-            locationAccuracyMeters: attendanceSession.locationAccuracyMeters,
-            locationCapturedAt: attendanceSession.locationCapturedAt.toISOString(),
             sections: attendanceSession.sections,
             scheduledStartsAt: attendanceSession.scheduledStartsAt.toISOString(),
             scheduledEndsAt: attendanceSession.scheduledEndsAt.toISOString(),
-            radiusMeters: attendanceSession.radiusMeters,
             durationMinutes: input.durationMinutes,
           },
         },
@@ -374,6 +323,7 @@ router.get('/', requireTeacher, async (req, res, next) => {
           },
           data: {
             status: 'CLOSED',
+            closedAt,
           },
         })
 
@@ -554,15 +504,6 @@ router.post(
       for (let attempt = 0; attempt < 5; attempt += 1) {
         try {
           await prisma.$transaction(async (tx) => {
-            // Global lock: do not replace with a JavaScript Set/Map.
-            // Return a supported scalar value instead of the PostgreSQL
-            // `void` result from pg_advisory_xact_lock. This avoids Prisma's
-            // "Failed to deserialize column of type 'void'" error.
-            await tx.$queryRaw`
-              SELECT 1 AS locked
-              FROM (SELECT pg_advisory_xact_lock(73829104)) AS lock_call
-            `
-
             // Also lock this session so simultaneous rotations for the same
             // teacher/session cannot leave two current token pairs.
             await tx.$queryRaw`
@@ -597,9 +538,12 @@ router.post(
               throw error
             }
 
-            // Remove expired rows; they cannot be used again.
+            // Remove expired tokens for this session only.
+            // Global cleanup here would make unrelated teachers wait for
+            // every token rotation.
             await tx.qrCodeToken.deleteMany({
               where: {
+                attendanceSessionId: attendanceSession.id,
                 expiresAt: { lte: transactionNow },
               },
             })
@@ -763,6 +707,14 @@ router.patch(
       }
 
       const result = await prisma.$transaction(async (tx) => {
+        // Serialize session closure against token rotation, symbol generation and other session-row operations.
+        await tx.$queryRaw`
+          SELECT id
+          FROM "AttendanceSession"
+          WHERE id = ${sessionId}::uuid
+          FOR UPDATE
+        `
+
         const attendanceSession =
           await tx.attendanceSession.findFirst({
             where: {
@@ -780,6 +732,18 @@ router.patch(
         }
 
         if (attendanceSession.status === 'CLOSED') {
+          const closedAt = new Date()
+
+          await tx.qrCodeToken.updateMany({
+            where: {
+              attendanceSessionId: attendanceSession.id,
+              expiresAt: { gt: closedAt },
+            },
+            data: {
+              expiresAt: closedAt,
+            },
+          })
+
           await tx.attendanceDeviceLock.deleteMany({
             where: {
               attendanceSessionId: attendanceSession.id,
@@ -800,7 +764,7 @@ router.patch(
           },
           data: {
             status: 'CLOSED',
-            endsAt: closedAt,
+            closedAt,
           },
         })
 
@@ -866,7 +830,7 @@ router.patch(
 
 // PATCH /api/teacher/sessions/:sessionId
 // Update editable metadata for a session owned by the authenticated teacher.
-// Location, status, timer, tokens and attendance records are intentionally not editable here.
+// Status, timer, tokens and attendance records are intentionally not editable here.
 router.patch('/:sessionId', requireTeacher, async (req, res, next) => {
   try {
     const sessionId = parseSessionId(req.params.sessionId)
@@ -1036,11 +1000,16 @@ router.delete('/:sessionId', requireTeacher, async (req, res, next) => {
           className: true,
           roomName: true,
           sections: true,
+          status: true,
         },
       })
 
       if (!attendanceSession) {
         return { notFound: true }
+      }
+
+      if (attendanceSession.status === 'ACTIVE') {
+        return { activeSession: true }
       }
 
       // Keep an audit trail while removing the session's operational data.
@@ -1059,6 +1028,11 @@ router.delete('/:sessionId', requireTeacher, async (req, res, next) => {
             sections: attendanceSession.sections,
           },
         },
+      })
+
+      // Remove the session's symbol challenge and its attempts before deleting attendance records.
+      await tx.symbolChallenge.deleteMany({
+        where: { attendanceSessionId: attendanceSession.id },
       })
 
       // AttendanceRecord uses onDelete: Restrict, so remove dependent rows first.
@@ -1092,6 +1066,12 @@ router.delete('/:sessionId', requireTeacher, async (req, res, next) => {
     if (result.notFound) {
       return res.status(404).json({
         error: 'Session not found.',
+      })
+    }
+
+    if (result.activeSession) {
+      return res.status(409).json({
+        error: 'Close the attendance session before deleting it.',
       })
     }
 

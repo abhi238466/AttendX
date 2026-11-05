@@ -68,7 +68,7 @@ cursor: pointer;
 transition: color .18s ease, border-color .18s ease, background .18s ease;
 }
 
-.la-back-button {
+.la-back-button:hover {
 color: var(--la-purple);
 border-color: #d5d0ff;
 background: #faf9ff;
@@ -933,3 +933,36 @@ transition-duration: .01ms !important;
     animation: none;
   }
 }
+
+/* Symbol challenge and viewport-fixed notifications */
+.la-toast-stack {
+  position: fixed;
+  top: max(12px, env(safe-area-inset-top));
+  left: 50%;
+  right: auto;
+  z-index: 1500;
+  width: min(440px, calc(100vw - 28px));
+  transform: translateX(-50%);
+}
+
+.la-toast {
+  max-height: min(30vh, 180px);
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+
+.la-toast-dismiss {
+  position: sticky;
+  top: 0;
+}
+
+@media (max-width: 560px) {
+  .la-toast-stack {
+    top: max(10px, env(safe-area-inset-top));
+    left: 50%;
+    right: auto;
+    width: calc(100vw - 24px);
+    transform: translateX(-50%);
+  }
+}
+

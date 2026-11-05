@@ -1,7 +1,8 @@
 
 import { Router } from 'express'
 import bcrypt from 'bcryptjs'
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
+import rateLimit from 'express-rate-limit'
 import { z } from 'zod'
 import { prisma } from '../config/prisma.js'
 
@@ -28,20 +29,81 @@ const teacherSelect = {
   updatedAt: true,
 }
 
-// Admin-only authorization.
-function requireAdmin(req, res, next) {
-  const user = req.session?.user
-
-  if (!user || user.role !== 'ADMIN' || !user.id) {
-    return res.status(401).json({
-      success: false,
-      message: 'Please sign in as Admin.',
-    })
-  }
-
-  req.admin = user
-  next()
+function hashValue(value) {
+  return createHash('sha256').update(value).digest('hex')
 }
+
+function safeHashCompare(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false
+
+  const first = Buffer.from(a, 'hex')
+  const second = Buffer.from(b, 'hex')
+
+  return first.length === second.length && first.length > 0 && timingSafeEqual(first, second)
+}
+
+// Admin-only authorization with password-version validation.
+async function requireAdmin(req, res, next) {
+  try {
+    const user = req.session?.user
+
+    if (!user || user.role !== 'ADMIN' || !user.id) {
+      return res.status(401).json({
+        success: false,
+        message: 'Please sign in as Admin.',
+      })
+    }
+
+    const admin = await prisma.admin.findUnique({
+      where: { id: user.id },
+      select: { id: true, passwordHash: true },
+    })
+
+    const sessionVersion = req.session.adminPasswordVersion
+    const currentVersion = admin ? hashValue(admin.passwordHash) : ''
+
+    if (
+      !admin ||
+      typeof sessionVersion !== 'string' ||
+      !safeHashCompare(sessionVersion, currentVersion)
+    ) {
+      await new Promise((resolve, reject) => {
+        req.session.destroy((error) => {
+          if (error) reject(error)
+          else resolve()
+        })
+      })
+
+      res.clearCookie('attendx.sid', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        path: '/',
+      })
+
+      return res.status(401).json({
+        success: false,
+        message: 'Your Admin session is no longer valid. Please sign in again.',
+      })
+    }
+
+    req.admin = user
+    return next()
+  } catch (error) {
+    return next(error)
+  }
+}
+
+const teacherMutationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many teacher-management requests. Please try again later.',
+  },
+})
 
 router.use(requireAdmin)
 
@@ -170,7 +232,7 @@ router.get('/', async (req, res, next) => {
 
 // POST /api/admin/teachers
 // Create a teacher account with a temporary password.
-router.post('/', async (req, res, next) => {
+router.post('/', teacherMutationLimiter, async (req, res, next) => {
   try {
     const parsed = createTeacherSchema.safeParse(req.body)
 
@@ -292,7 +354,7 @@ router.post('/', async (req, res, next) => {
 
 // PATCH /api/admin/teachers/:id/reset-password
 // Invalidate the old password and require a password change at next login.
-router.patch('/:id/reset-password', async (req, res, next) => {
+router.patch('/:id/reset-password', teacherMutationLimiter, async (req, res, next) => {
   try {
     const idResult = z.string().uuid().safeParse(req.params.id)
 
@@ -373,7 +435,7 @@ router.patch('/:id/reset-password', async (req, res, next) => {
 })
 
 // PATCH /api/admin/teachers/:id/status
-router.patch('/:id/status', async (req, res, next) => {
+router.patch('/:id/status', teacherMutationLimiter, async (req, res, next) => {
   try {
     const idResult = z.string().uuid().safeParse(req.params.id)
     const bodyResult = updateStatusSchema.safeParse(req.body)

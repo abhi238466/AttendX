@@ -1,8 +1,7 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft,
-  MapPin,
   Plus,
   Trash2,
   CalendarDays,
@@ -35,12 +34,6 @@ function StartAttendance({ onBack }) {
   const [classStartTime, setClassStartTime] = useState('')
   const [classEndTime, setClassEndTime] = useState('')
   const [durationMinutes, setDurationMinutes] = useState('5')
-  const [radiusMeters, setRadiusMeters] = useState('25')
-  const [customRadius, setCustomRadius] = useState('')
-  const [location, setLocation] = useState(null)
-  // Keep the latest accepted reading available immediately for form submission.
-  const locationRef = useRef(null)
-  const [locationStatus, setLocationStatus] = useState('')
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -60,138 +53,9 @@ function StartAttendance({ onBack }) {
     setSections((current) => current.filter((_, i) => i !== index))
   }
 
-  const captureLocation = () => {
-    setError('')
-    setLocation(null)
-    locationRef.current = null
-    setLocationStatus('Checking GPS readings. Keep location enabled...')
-
-    if (!navigator.geolocation) {
-      setLocationStatus('')
-      setError('This browser does not support location services.')
-      return
-    }
-
-    let bestPosition = null
-    let bestReceivedAt = null
-    let watchId = null
-    let finished = false
-    let timeoutId = null
-
-    const finish = (forceBest = false) => {
-      if (finished) return
-      finished = true
-
-      if (watchId !== null) {
-        navigator.geolocation.clearWatch(watchId)
-      }
-      if (timeoutId !== null) {
-        clearTimeout(timeoutId)
-      }
-
-      if (!bestPosition) {
-        setLocationStatus('')
-        setError(
-          'Your device did not return a location. Check browser location permission and device location services, then try again.'
-        )
-        return
-      }
-
-      const { latitude, longitude, accuracy } = bestPosition.coords
-      // Use the time this browser delivered the reading. Some emulated/mock
-      // location providers expose a timestamp that the backend considers stale.
-      const capturedAt = new Date(bestReceivedAt ?? Date.now())
-
-      const reading = {
-        latitude,
-        longitude,
-        accuracy,
-        capturedAt: capturedAt.toISOString(),
-      }
-
-      // Update the ref and UI together so submit always uses the captured reading.
-      locationRef.current = reading
-      setLocation(reading)
-
-      if (accuracy <= 50) {
-        setLocationStatus(
-          `Location captured. Device-reported accuracy: about ${Math.round(accuracy)} m.`
-        )
-      } else {
-        setLocationStatus(
-          `A location was received, but the device reports about ${Math.round(accuracy)} m uncertainty. This reading may not be precise enough to create a classroom session. Try again with precise location enabled.`
-        )
-      }
-    }
-
-    try {
-      watchId = navigator.geolocation.watchPosition(
-        (position) => {
-          const { latitude, longitude, accuracy } = position.coords
-
-          if (
-            Number.isFinite(latitude) &&
-            Number.isFinite(longitude) &&
-            Number.isFinite(accuracy) &&
-            latitude >= -90 &&
-            latitude <= 90 &&
-            longitude >= -180 &&
-            longitude <= 180 &&
-            accuracy > 0 &&
-            (!bestPosition || accuracy < bestPosition.coords.accuracy)
-          ) {
-            bestPosition = position
-            bestReceivedAt = Date.now()
-            setLocationStatus(
-              `Improving GPS reading... best reported accuracy so far: ${Math.round(accuracy)} m.`
-            )
-
-            // Stop early once a reasonably precise reading is received.
-            if (accuracy <= 50) {
-              finish()
-            }
-          }
-        },
-        (locationError) => {
-          if (finished) return
-
-          if (locationError.code === locationError.PERMISSION_DENIED) {
-            finished = true
-            if (watchId !== null) navigator.geolocation.clearWatch(watchId)
-            if (timeoutId !== null) clearTimeout(timeoutId)
-            setLocationStatus('')
-            setError(
-              'Location permission was denied. Allow location access in your browser and device settings, then try again.'
-            )
-          } else if (!bestPosition && locationError.code === locationError.POSITION_UNAVAILABLE) {
-            setLocationStatus(
-              'The device has not provided a usable GPS reading yet. Waiting for another reading...'
-            )
-          }
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 20000,
-          maximumAge: 0,
-        }
-      )
-
-      // Give the device up to 12 seconds to improve its reading.
-      // If it cannot reach 50 m, keep the best reading so the user sees
-      // the actual device-reported uncertainty instead of a fake calculation.
-      timeoutId = setTimeout(() => finish(true), 12000)
-    } catch {
-      setLocationStatus('')
-      setError('Unable to start location capture. Please try again.')
-    }
-  }
-
   const handleContinue = async (event) => {
     event.preventDefault()
     setError('')
-
-    // Use the exact reading captured by this component, not a stale render value.
-    const currentLocation = locationRef.current || location
 
     const selectedSections = [
       ...new Set(
@@ -237,61 +101,9 @@ function StartAttendance({ onBack }) {
       return
     }
 
-    if (!currentLocation) {
-      setError(
-        'Capture your current classroom location before starting attendance.'
-      )
-      return
-    }
-
-    const locationCapturedAtMs = Date.parse(currentLocation.capturedAt)
-    const locationAgeMs = Date.now() - locationCapturedAtMs
-
-    // Match the backend freshness window before sending the request.
-    // A small margin avoids a request becoming stale while travelling to the server.
-    if (
-      !Number.isFinite(locationCapturedAtMs) ||
-      locationAgeMs < -5000 ||
-      locationAgeMs > 55000
-    ) {
-      setError('This location reading has expired. Capture your current classroom location again, then start attendance immediately.')
-      return
-    }
-
-    const selectedRadius =
-      radiusMeters === 'custom'
-        ? Number(customRadius)
-        : Number(radiusMeters)
-
-    if (
-      !Number.isFinite(selectedRadius) ||
-      selectedRadius < 5 ||
-      selectedRadius > 80
-    ) {
-      setError('Choose a radius between 5 and 80 metres.')
-      return
-    }
-
-    if (
-      !Number.isFinite(currentLocation.accuracy) ||
-      currentLocation.accuracy <= 0
-    ) {
-      setError('Location accuracy is invalid. Capture your location again.')
-      return
-    }
-
-    if (currentLocation.accuracy > 50) {
-      setError(
-        `Your device reports approximately ${Math.round(currentLocation.accuracy)} metres of location uncertainty. The classroom location cannot be verified reliably from this reading. Enable precise location and capture again. The attendance radius has not been changed.`
-      )
-      return
-    }
-
     setIsSubmitting(true)
 
     try {
-      console.debug('[AttendX] Creating session with location reading age (ms):', Date.now() - Date.parse(currentLocation.capturedAt))
-
       const response = await fetch(
         `${API_BASE_URL}/api/teacher/sessions`,
         {
@@ -307,14 +119,9 @@ function StartAttendance({ onBack }) {
             className: className.trim() || undefined,
             roomName: roomName.trim() || undefined,
             sections: selectedSections,
-            latitude: currentLocation.latitude,
-            longitude: currentLocation.longitude,
-            radiusMeters: selectedRadius,
             durationMinutes: Number(durationMinutes),
             scheduledStartsAt: classStart.toISOString(),
             scheduledEndsAt: classEnd.toISOString(),
-            locationAccuracyMeters: currentLocation.accuracy,
-            locationCapturedAt: currentLocation.capturedAt,
           }),
         }
       )
@@ -538,94 +345,6 @@ function StartAttendance({ onBack }) {
               onChange={(event) => setClassEndTime(event.target.value)}
               required
             />
-          </div>
-
-          <div className="td-form-group">
-            <label htmlFor="attendance-radius">Attendance Radius</label>
-            <select
-              id="attendance-radius"
-              value={radiusMeters}
-              onChange={(event) => setRadiusMeters(event.target.value)}
-              required
-            >
-              <option value="5">5 metres</option>
-              <option value="25">25 metres (default)</option>
-              <option value="50">50 metres</option>
-              <option value="80">80 metres</option>
-              <option value="custom">Custom radius (5–80 m)</option>
-            </select>
-          </div>
-
-          {radiusMeters === 'custom' && (
-            <div className="td-form-group">
-              <label htmlFor="custom-radius">
-                Custom Radius (metres)
-              </label>
-              <input
-                id="custom-radius"
-                type="number"
-                min="5"
-                max="80"
-                value={customRadius}
-                onChange={(event) => setCustomRadius(event.target.value)}
-                placeholder="Enter 5–80 metres"
-                required
-              />
-            </div>
-          )}
-
-          <div className="td-form-group td-form-full">
-            <label>
-              <MapPin size={16} /> Classroom Location
-            </label>
-            <p className="td-form-help">
-              Capture your current location for this session. It will not
-              be reused automatically for your next class.
-            </p>
-
-            <button
-              type="button"
-              className="td-secondary-btn"
-              onClick={captureLocation}
-              disabled={isSubmitting}
-            >
-              <MapPin size={16} />
-              Use Current Location
-            </button>
-
-            {locationStatus && (
-              <p className="td-form-help" role="status">
-                {locationStatus}
-              </p>
-            )}
-
-            {location && (
-              <div className="td-location-coordinates td-form-full" aria-live="polite">
-                <div className="td-form-group">
-                  <label htmlFor="attendance-latitude">Latitude</label>
-                  <input
-                    id="attendance-latitude"
-                    type="text"
-                    value={location.latitude.toFixed(6)}
-                    readOnly
-                    aria-readonly="true"
-                  />
-                </div>
-                <div className="td-form-group">
-                  <label htmlFor="attendance-longitude">Longitude</label>
-                  <input
-                    id="attendance-longitude"
-                    type="text"
-                    value={location.longitude.toFixed(6)}
-                    readOnly
-                    aria-readonly="true"
-                  />
-                </div>
-                <p className="td-form-help">
-                  These coordinates are from the current device reading. Reported accuracy: about {Math.round(location.accuracy)} m.
-                </p>
-              </div>
-            )}
           </div>
 
           {error && (

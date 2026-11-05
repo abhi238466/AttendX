@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AdminProfile from './AdminProfile.jsx'
+import GeofenceManagement from './GeofenceManagement.jsx'
 import './AdminDashboard.css'
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
@@ -8,6 +9,7 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, ''
 const navigation = [
   { id: 'overview', label: 'Dashboard', icon: '▦' },
   { id: 'teachers', label: 'Teachers', icon: '♙' },
+  { id: 'geofences', label: 'Geofence Management', icon: '◎' },
 ]
 
 const emptyForm = {
@@ -424,7 +426,7 @@ export default function AdminDashboard() {
         <header className="admin-topbar">
           <div className="admin-breadcrumb">
             <span>AttendX</span><span className="breadcrumb-slash">/</span>
-            <strong>{activePage === 'overview' ? 'Dashboard' : 'Teacher Management'}</strong>
+            <strong>{activePage === 'overview' ? 'Dashboard' : activePage === 'teachers' ? 'Teacher Management' : 'Geofence Management'}</strong>
           </div>
 
           <div className="admin-topbar-right">
@@ -500,7 +502,7 @@ export default function AdminDashboard() {
                 )}
               </section>
             </>
-          ) : (
+          ) : activePage === 'teachers' ? (
             <>
               <section className="admin-welcome-row">
                 <div>
@@ -537,6 +539,8 @@ export default function AdminDashboard() {
                 )}
               </section>
             </>
+          ) : (
+            <GeofenceManagement onNotify={notify} />
           )}
 
           <footer className="admin-footer">

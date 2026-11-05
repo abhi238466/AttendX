@@ -61,6 +61,12 @@ enum Gender {
   PREFER_NOT_TO_SAY
 }
 
+enum SymbolChallengeAttemptStatus {
+  PENDING
+  ACCEPTED
+  LOCKED
+}
+
 model Admin {
   id            String   @id @default(uuid()) @db.Uuid
   fullName      String   @db.VarChar(120)
@@ -116,12 +122,12 @@ model AttendanceSession {
   roomName    String?  @db.VarChar(100)
   sections    String[]
 
-  // Teacher's captured classroom location and chosen radius
-  latitude               Float
-  longitude              Float
+  // Legacy teacher location fields retained for historical sessions
+  latitude               Float?
+  longitude              Float?
   locationAccuracyMeters Float?
   locationCapturedAt     DateTime?
-  radiusMeters           Int
+  radiusMeters           Int?
 
   // Optional timetable fields; old sessions remain valid
   scheduledStartsAt      DateTime?
@@ -132,16 +138,20 @@ model AttendanceSession {
   status    AttendanceSessionStatus @default(ACTIVE)
   startsAt  DateTime                @default(now())
   endsAt    DateTime?
+  closedAt  DateTime?
   createdAt DateTime                @default(now())
   updatedAt DateTime                @updatedAt
 
   teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Restrict)
 
-  records     AttendanceRecord[]
-  qrTokens    QrCodeToken[]
-  attempts    AttendanceAttempt[]
-  challenges  AttendanceChallenge[]
-  deviceLocks AttendanceDeviceLock[]
+  records               AttendanceRecord[]
+  qrTokens              QrCodeToken[]
+  attempts              AttendanceAttempt[]
+  challenges            AttendanceChallenge[]
+  deviceLocks           AttendanceDeviceLock[]
+  symbolChallenge       SymbolChallenge?
+  symbolViolations      SymbolChallengeViolation[]
+  symbolViolationEvents SymbolChallengeViolationEvent[]
 
   @@index([teacherId, status])
   @@index([teacherId, startsAt])
@@ -190,6 +200,8 @@ model AttendanceRecord {
 
   attendanceSession AttendanceSession @relation(fields: [attendanceSessionId], references: [id], onDelete: Restrict)
   correctedBy       Teacher?          @relation("AttendanceCorrection", fields: [correctedByTeacherId], references: [id], onDelete: Restrict)
+
+  symbolChallengeAttempt SymbolChallengeAttempt?
 
   // One successful record per university roll number per session.
   // The same class roll number may exist in multiple sections.
@@ -266,7 +278,7 @@ model TeacherLoginLockout {
 }
 
 model AttendanceChallenge {
-  id                  String    @id @default(uuid()) @db.Uuid
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   attendanceSessionId String    @db.Uuid
   tokenHash           String    @unique @db.VarChar(128)
   expiresAt           DateTime
@@ -291,4 +303,107 @@ model AttendanceDeviceLock {
 
   @@unique([attendanceSessionId, deviceTokenHash])
   @@index([attendanceSessionId])
+}
+
+// One Symbol Challenge per attendance session.
+model SymbolChallenge {
+  id                  String @id @default(uuid()) @db.Uuid
+  attendanceSessionId String @unique @db.Uuid
+
+  // Nine randomly generated symbols arranged in three rows.
+  symbols Json
+
+  // Three correct answers, one for each row.
+  // Never return this field in student API responses.
+  correctAnswers Json
+
+  startedAt DateTime @default(now())
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  attendanceSession AttendanceSession        @relation(fields: [attendanceSessionId], references: [id], onDelete: Cascade)
+  attempts          SymbolChallengeAttempt[]
+
+  @@index([expiresAt])
+}
+
+// Tracks one device's Symbol Challenge verification for a session.
+model SymbolChallengeAttempt {
+  id                String @id @default(uuid()) @db.Uuid
+  symbolChallengeId String @db.Uuid
+
+  deviceTokenHash                String @db.VarChar(64)
+  normalizedUniversityRollNumber String @db.VarChar(80)
+
+  // Three wrong attempts result in a session-specific device lock.
+  wrongAttempts Int @default(0)
+
+  // Individual student's symbol challenge deadline; set when the grid is first issued.
+  expiresAt DateTime?
+
+  status SymbolChallengeAttemptStatus @default(PENDING)
+
+  acceptedAt         DateTime?
+  attendanceRecordId String?   @unique @db.Uuid
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  symbolChallenge SymbolChallenge @relation(fields: [symbolChallengeId], references: [id], onDelete: Cascade)
+
+  attendanceRecord AttendanceRecord? @relation(fields: [attendanceRecordId], references: [id], onDelete: SetNull)
+
+  @@unique([symbolChallengeId, deviceTokenHash])
+  @@index([symbolChallengeId, status])
+  @@index([normalizedUniversityRollNumber])
+}
+
+// Persists fullscreen-exit and tab-switch violations per device and attendance session.
+// The second violation is converted into an AttendanceDeviceLock by the API.
+model SymbolChallengeViolation {
+  id                             String    @id @default(uuid()) @db.Uuid
+  attendanceSessionId            String    @db.Uuid
+  deviceTokenHash                String    @db.VarChar(64)
+  normalizedUniversityRollNumber String    @db.VarChar(80)
+  violationCount                 Int       @default(0)
+  lastViolationAt                DateTime  @default(now())
+  lockedAt                       DateTime?
+  createdAt                      DateTime  @default(now())
+  updatedAt                      DateTime  @updatedAt
+
+  attendanceSession AttendanceSession @relation(fields: [attendanceSessionId], references: [id], onDelete: Cascade)
+
+  @@unique([attendanceSessionId, deviceTokenHash])
+  @@index([attendanceSessionId, lockedAt])
+  @@index([normalizedUniversityRollNumber])
+}
+
+// Stores each distinct fullscreen/tab-switch incident exactly once.
+// The unique constraint makes retries of the same incident idempotent.
+model SymbolChallengeViolationEvent {
+  id                  String   @id @default(uuid()) @db.Uuid
+  attendanceSessionId String   @db.Uuid
+  deviceTokenHash     String   @db.VarChar(64)
+  incidentId          String   @db.VarChar(80)
+  createdAt           DateTime @default(now())
+
+  attendanceSession AttendanceSession @relation(fields: [attendanceSessionId], references: [id], onDelete: Cascade)
+
+  @@unique([attendanceSessionId, deviceTokenHash, incidentId])
+  @@index([attendanceSessionId, deviceTokenHash, createdAt])
+}
+
+model GeofenceZone {
+  id           String   @id @default(uuid()) @db.Uuid
+  areaName     String   @db.VarChar(120)
+  zoneName     String   @db.VarChar(120)
+  latitude     Float
+  longitude    Float
+  radiusMeters Int
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([areaName])
 }

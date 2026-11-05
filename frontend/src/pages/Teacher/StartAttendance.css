@@ -328,24 +328,6 @@
 }
 
 /* ========================================
-   Location
-======================================== */
-
-.td-form-group .td-secondary-btn {
-  align-self: flex-start;
-  max-width: 100%;
-}
-
-.td-form-group .td-secondary-btn svg {
-  color: currentColor;
-}
-
-.td-form-group [role='status'] {
-  margin-top: 2px;
-  overflow-wrap: anywhere;
-}
-
-/* ========================================
    Error Message
 ======================================== */
 
@@ -400,34 +382,6 @@
   .td-primary-btn:disabled svg {
     animation-duration: 2s;
   }
-}
-
-/* ========================================
-   Placeholder / Empty State
-   Used if the JSX renders .td-placeholder
-======================================== */
-
-.td-placeholder {
-  width: 100%;
-  min-width: 0;
-  padding: 30px;
-  background: #fff;
-  border: 1px solid #e9e8f3;
-  border-radius: 18px;
-  box-shadow: 0 8px 28px rgb(36 31 86 / 4%);
-}
-
-.td-placeholder h2 {
-  margin: 0 0 10px;
-  color: #211d45;
-  font-size: 19px;
-}
-
-.td-placeholder p {
-  margin: 0;
-  color: #77798e;
-  font-size: 14px;
-  line-height: 1.7;
 }
 
 /* ========================================

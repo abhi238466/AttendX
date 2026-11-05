@@ -10,6 +10,7 @@ import { teacherSessionMiddleware } from './config/teacherSession.js'
 import adminAuthRouter from './adminAuth.js'
 import adminTeachersRouter from './routes/adminTeachers.js'
 import adminUploadsRouter from './routes/adminUploads.js'
+import adminGeofencesRouter from './routes/adminGeofences.js'
 import teacherAuthRouter from './teacherAuth.js'
 import teacherSessionsRouter from './routes/teacherSessions.js'
 import teacherAttendanceRouter from './routes/teacherAttendance.js'
@@ -59,6 +60,12 @@ app.use(
   adminUploadsRouter
 )
 
+app.use(
+  '/api/admin/geofences',
+  sessionMiddleware,
+  adminGeofencesRouter
+)
+
 // Teacher authentication uses a separate session and cookie.
 app.use(
   '/api/auth/teacher',
@@ -74,16 +81,14 @@ app.use(
   teacherSessionsRouter
 )
 
-
- // Student attendance and teacher-only manual attendance.
- // Session middleware reads the teacher session cookie.
- // Public QR/challenge/submit routes remain accessible without login.
+// Student attendance and teacher-only manual attendance.
+// Session middleware reads the teacher session cookie.
+// Public QR/challenge/submit routes remain accessible without login.
 app.use(
   '/api/attendance',
   teacherSessionMiddleware,
   teacherAttendanceRouter
 )
-
 
 // Basic backend health check.
 app.get('/health', (req, res) => {
@@ -129,11 +134,25 @@ app.use((req, res) => {
 
 // Central error handler.
 app.use((err, req, res, next) => {
-  console.error('❌ Backend error:', err.message)
-
   if (res.headersSent) {
     return next(err)
   }
+
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid JSON request body',
+    })
+  }
+
+  if (err.type === 'entity.too.large' || err.status === 413) {
+    return res.status(413).json({
+      success: false,
+      message: 'Request body is too large',
+    })
+  }
+
+  console.error('❌ Backend error:', err.message)
 
   res.status(500).json({
     success: false,
@@ -144,6 +163,7 @@ app.use((err, req, res, next) => {
 let server
 let isShuttingDown = false
 let attendanceLockCleanupTimer
+let attendanceCleanupInProgress = false
 
 const ATTENDANCE_LOCK_CLEANUP_INTERVAL_MS = 30 * 1000
 
@@ -223,6 +243,10 @@ async function cleanupExpiredAttendanceSessions() {
 
 function startAttendanceLockCleanup() {
   const runCleanup = async () => {
+    if (attendanceCleanupInProgress || isShuttingDown) return
+
+    attendanceCleanupInProgress = true
+
     try {
       await cleanupExpiredAttendanceSessions()
     } catch (error) {
@@ -230,6 +254,8 @@ function startAttendanceLockCleanup() {
         '❌ Expired attendance-session cleanup failed:',
         error.message
       )
+    } finally {
+      attendanceCleanupInProgress = false
     }
   }
 

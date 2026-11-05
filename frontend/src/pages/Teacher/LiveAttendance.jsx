@@ -4,7 +4,6 @@ import { QRCodeSVG } from 'qrcode.react'
 import {
 ArrowLeft,
 Clock3,
-MapPin,
 QrCode,
 RefreshCw,
 ShieldCheck,
@@ -12,6 +11,7 @@ Users,
 XCircle,
 } from 'lucide-react'
 import './LiveAttendance.css'
+import SymbolChallenge from './SymbolChallenge'
 
 const API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL ||
@@ -69,6 +69,9 @@ const [refreshing, setRefreshing] = useState(false)
 const [closing, setClosing] = useState(false)
 const [error, setError] = useState('')
 const [notice, setNotice] = useState('')
+const [symbolChallenge, setSymbolChallenge] = useState(null)
+const [symbolSecondsLeft, setSymbolSecondsLeft] = useState(0)
+const [generatingSymbol, setGeneratingSymbol] = useState(false)
 
 useEffect(() => {
   if (!notice) return undefined
@@ -262,6 +265,8 @@ try {
     current ? { ...current, status: 'CLOSED' } : current
   )
   setTokenData(null)
+  setSymbolChallenge(null)
+  setSymbolSecondsLeft(0)
   setNotice(auto ? 'Session time ended. Attendance session closed automatically.' : 'Attendance session closed successfully.')
 } catch (requestError) {
   setError(requestError.message || 'Could not close this session.')
@@ -288,6 +293,52 @@ useEffect(() => {
   handleCloseSession(true)
   return undefined
 }, [loading, closed, closing, session, sessionSecondsLeft])
+
+useEffect(() => {
+  if (!symbolChallenge?.expiresAt || closed) {
+    setSymbolSecondsLeft(0)
+    return undefined
+  }
+
+  const updateSymbolCountdown = () => {
+    const remainingMs = new Date(symbolChallenge.expiresAt).getTime() - Date.now()
+    setSymbolSecondsLeft(Math.max(0, Math.ceil(remainingMs / 1000)))
+  }
+
+  updateSymbolCountdown()
+  const timer = window.setInterval(updateSymbolCountdown, 250)
+  return () => window.clearInterval(timer)
+}, [symbolChallenge?.expiresAt, closed])
+
+async function handleGenerateSymbolChallenge() {
+  if (!sessionId || closed || generatingSymbol || !session || session.status !== 'ACTIVE') return
+
+  setGeneratingSymbol(true)
+  setError('')
+  setNotice('')
+
+  try {
+    const result = await readResponse(
+      await fetch(`${API_BASE_URL}/api/attendance/symbol/generate`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ attendanceSessionId: sessionId }),
+        cache: 'no-store',
+      })
+    )
+
+    setSymbolChallenge(result.symbolChallenge)
+    setNotice('New symbol challenge generated. Students will receive this latest challenge.')
+  } catch (requestError) {
+    setError(requestError.message || 'Could not generate the symbol challenge.')
+  } finally {
+    setGeneratingSymbol(false)
+  }
+}
 
 if (loading) {
 return (
@@ -378,10 +429,6 @@ Back to Dashboard
               </strong>
             </span>
           </span>
-          <span>
-            <MapPin size={15} />
-            Radius {session.radiusMeters} m
-          </span>
         </div>
       </section>
     )}
@@ -458,6 +505,14 @@ Back to Dashboard
         >
           Open student attendance page
         </a>
+
+        <SymbolChallenge
+          challenge={symbolChallenge}
+          secondsLeft={symbolSecondsLeft}
+          generating={generatingSymbol}
+          disabled={closed || !session || session.status !== 'ACTIVE'}
+          onGenerate={handleGenerateSymbolChallenge}
+        />
       </section>
 
       <section className="la-card la-code-card">

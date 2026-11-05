@@ -30,60 +30,80 @@ const TEACHER_LOGIN_MAX_FAILURES = 5
 const TEACHER_LOGIN_LOCK_MS = 15 * 60 * 1000
 
 async function getActiveTeacherLoginLock(email) {
-  const record = await prisma.teacherLoginLockout.findUnique({
-    where: { email },
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`
+      SELECT pg_advisory_xact_lock(hashtext(${email}))
+    `
+
+    const record = await tx.teacherLoginLockout.findUnique({
+      where: { email },
+    })
+
+    if (!record?.lockedUntil) return null
+
+    const remainingMs = record.lockedUntil.getTime() - Date.now()
+    if (remainingMs > 0) return Math.ceil(remainingMs / 1000)
+
+    // The previous lock expired; clear the old counter before allowing another try.
+    await tx.teacherLoginLockout.deleteMany({ where: { email } })
+    return null
   })
-
-  if (!record?.lockedUntil) return null
-
-  const remainingMs = record.lockedUntil.getTime() - Date.now()
-  if (remainingMs > 0) return Math.ceil(remainingMs / 1000)
-
-  // The previous lock expired; clear the old counter before allowing another try.
-  await prisma.teacherLoginLockout.deleteMany({ where: { email } })
-  return null
 }
 
 async function recordTeacherLoginFailure(email) {
-  const now = new Date()
+  return prisma.$transaction(async (tx) => {
+    // Serialize failures for this email across concurrent requests and backend instances.
+    await tx.$queryRaw`
+      SELECT pg_advisory_xact_lock(hashtext(${email}))
+    `
 
-  const current = await prisma.teacherLoginLockout.findUnique({
-    where: { email },
-  })
-
-  if (current?.lockedUntil && current.lockedUntil.getTime() > now.getTime()) {
-    return Math.ceil((current.lockedUntil.getTime() - now.getTime()) / 1000)
-  }
-
-  // Increment in the database to reduce lost updates if requests arrive together.
-  const updated = await prisma.teacherLoginLockout.upsert({
-    where: { email },
-    create: {
-      email,
-      failedAttempts: 1,
-    },
-    update: {
-      failedAttempts: { increment: 1 },
-      lockedUntil: null,
-    },
-  })
-
-  if (updated.failedAttempts >= TEACHER_LOGIN_MAX_FAILURES) {
-    const lockedUntil = new Date(Date.now() + TEACHER_LOGIN_LOCK_MS)
-
-    await prisma.teacherLoginLockout.update({
+    const now = new Date()
+    const current = await tx.teacherLoginLockout.findUnique({
       where: { email },
-      data: { lockedUntil },
     })
 
-    return Math.ceil(TEACHER_LOGIN_LOCK_MS / 1000)
-  }
+    if (current?.lockedUntil && current.lockedUntil.getTime() > now.getTime()) {
+      return Math.ceil((current.lockedUntil.getTime() - now.getTime()) / 1000)
+    }
 
-  return null
+    if (current?.lockedUntil && current.lockedUntil.getTime() <= now.getTime()) {
+      await tx.teacherLoginLockout.deleteMany({ where: { email } })
+    }
+
+    const updated = await tx.teacherLoginLockout.upsert({
+      where: { email },
+      create: {
+        email,
+        failedAttempts: 1,
+      },
+      update: {
+        failedAttempts: { increment: 1 },
+        lockedUntil: null,
+      },
+    })
+
+    if (updated.failedAttempts >= TEACHER_LOGIN_MAX_FAILURES) {
+      const lockedUntil = new Date(Date.now() + TEACHER_LOGIN_LOCK_MS)
+
+      await tx.teacherLoginLockout.update({
+        where: { email },
+        data: { lockedUntil },
+      })
+
+      return Math.ceil(TEACHER_LOGIN_LOCK_MS / 1000)
+    }
+
+    return null
+  })
 }
 
 async function clearTeacherLoginFailures(email) {
-  await prisma.teacherLoginLockout.deleteMany({ where: { email } })
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`
+      SELECT pg_advisory_xact_lock(hashtext(${email}))
+    `
+    await tx.teacherLoginLockout.deleteMany({ where: { email } })
+  })
 }
 
 const uploadLimiter = rateLimit({
@@ -92,6 +112,14 @@ const uploadLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many upload attempts. Try again later.' },
+})
+
+const changePasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many password change attempts. Try again later.' },
 })
 
 const loginSchema = z.object({
@@ -336,7 +364,9 @@ router.post('/login', loginLimiter, async (req, res, next) => {
       !teacher ||
       !(await bcrypt.compare(parsed.data.password, teacher.passwordHash))
     ) {
-      const lockSeconds = await recordTeacherLoginFailure(email)
+      const lockSeconds = teacher
+        ? await recordTeacherLoginFailure(email)
+        : null
 
       if (lockSeconds) {
         res.set('Retry-After', String(lockSeconds))
@@ -419,6 +449,7 @@ router.get('/me', requireTeacherSession, async (req, res, next) => {
 router.post(
   '/change-password',
   requireTeacherSession,
+  changePasswordLimiter,
   async (req, res, next) => {
     try {
       const parsed = passwordSchema.safeParse(req.body)
@@ -466,18 +497,46 @@ router.post(
         })
       }
 
-      const updated = await prisma.teacher.update({
-        where: { id: teacher.id },
+      const newPasswordHash = await bcrypt.hash(newPassword, 12)
+      const passwordUpdate = await prisma.teacher.updateMany({
+        where: {
+          id: teacher.id,
+          updatedAt: teacher.updatedAt,
+          passwordHash: teacher.passwordHash,
+          status: 'ACTIVE',
+        },
         data: {
-          passwordHash: await bcrypt.hash(newPassword, 12),
+          passwordHash: newPasswordHash,
           mustChangePassword: false,
         },
+      })
+
+      if (passwordUpdate.count !== 1) {
+        return res.status(409).json({
+          error: 'Your account changed during this request. Please log in again and retry.',
+          reauthenticate: true,
+        })
+      }
+
+      const updated = await prisma.teacher.findUnique({
+        where: { id: teacher.id },
         select: {
           id: true,
           email: true,
           updatedAt: true,
+          status: true,
+          mustChangePassword: true,
         },
       })
+
+      if (!updated || updated.status !== 'ACTIVE' || updated.mustChangePassword) {
+        await destroySession(req)
+        clearTeacherCookie(res)
+        return res.status(409).json({
+          error: 'Your account changed during this request. Please log in again.',
+          reauthenticate: true,
+        })
+      }
 
       await regenerateSession(req)
 
@@ -566,12 +625,12 @@ router.post(
         select: teacherSelect,
       })
 
+      uploadedPublicId = null
+
       // Photo update changes updatedAt. Refresh this Teacher's own session
       // version so their session remains valid.
       req.session.teacherSessionVersion = updated.updatedAt.getTime()
       await saveSession(req)
-
-      uploadedPublicId = null
 
       // The new photo is saved before the previous photo is removed.
       const oldPhotoDeleted = current.photoPublicId
