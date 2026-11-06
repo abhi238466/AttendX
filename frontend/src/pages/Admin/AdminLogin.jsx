@@ -44,7 +44,10 @@ async function postJson(path, payload) {
   const result = await response.json().catch(() => ({}))
 
   if (!response.ok) {
-    throw new Error(result.message || 'Request failed. Please try again.')
+    const error = new Error(result.message || 'Request failed. Please try again.')
+    error.retryAfterSeconds = Number(result.retryAfterSeconds) || 0
+    error.status = response.status
+    throw error
   }
 
   return result
@@ -90,6 +93,7 @@ function AdminLogin() {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [resendCountdown, setResendCountdown] = useState(0)
   const [toast, setToast] = useState(null)
 
   const toastTimer = useRef(null)
@@ -99,6 +103,16 @@ function AdminLogin() {
   useEffect(() => {
     return () => window.clearTimeout(toastTimer.current)
   }, [])
+
+  useEffect(() => {
+    if (resendCountdown <= 0) return undefined
+
+    const timer = window.setTimeout(() => {
+      setResendCountdown((seconds) => Math.max(0, seconds - 1))
+    }, 1000)
+
+    return () => window.clearTimeout(timer)
+  }, [resendCountdown])
 
   function notify(type, message) {
     window.clearTimeout(toastTimer.current)
@@ -185,6 +199,7 @@ function AdminLogin() {
 
     setOtp('')
 setOtpPurpose('registration')
+setResendCountdown(result.retryAfterSeconds || 60)
 setView('verify')
 
       notify(
@@ -216,6 +231,7 @@ setView('verify')
 
       setView('verify')
       setOtpPurpose('reset')
+      setResendCountdown(result.retryAfterSeconds || 60)
       notify(
         'success',
         result.message ||
@@ -346,11 +362,15 @@ async function handleResendOtp() {
     }
 
     setOtp('')
+    setResendCountdown(result.retryAfterSeconds || 60)
     notify(
       'success',
-      result.message || 'If eligible, a new verification code has been requested.'
+      result.message || 'A new verification code has been requested.'
     )
   } catch (error) {
+    if (error.retryAfterSeconds > 0) {
+      setResendCountdown(error.retryAfterSeconds)
+    }
     notify('error', error.message || 'Could not resend the code.')
   } finally {
     setIsSubmitting(false)
@@ -632,7 +652,7 @@ async function handleResendOtp() {
                   />
                 </div>
                 <small className="admin-field-note">
-                  The server checks this against its ADMIN_EMAIL setting.
+                  The server checks this against its ADMIN_EMAILS allowlist.
                 </small>
               </div>
 
@@ -698,7 +718,7 @@ async function handleResendOtp() {
               {renderSubmitButton('Send Verification Code', 'Sending code…')}
 
               <p className="admin-login-help">
-                For security, the server should not reveal whether an email is registered.
+                Only registered Admin accounts can request a password reset.
               </p>
 
               <p className="admin-login-help">
@@ -754,9 +774,11 @@ async function handleResendOtp() {
                   type="button"
                   className="admin-text-button"
                   onClick={handleResendOtp}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || resendCountdown > 0}
                 >
-                  Resend code
+                  {resendCountdown > 0
+                    ? `Resend code in ${resendCountdown}s`
+                    : 'Resend code'}
                 </button>
                 <button
                   type="button"

@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
-import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto'
+import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto'
 import rateLimit from 'express-rate-limit'
 import { prisma } from './config/prisma.js'
 import { sendOtpEmail } from './services/emailService.js'
@@ -11,6 +11,11 @@ const router = Router()
 const OTP_EXPIRY_MS = 5 * 60 * 1000
 const RESET_TOKEN_EXPIRY_MS = 10 * 60 * 1000
 const MAX_OTP_ATTEMPTS = 5
+const RESET_OTP_RESEND_COOLDOWN_MS = 60 * 1000
+const RESET_OTP_WINDOW_MS = 15 * 60 * 1000
+const RESET_OTP_DAILY_WINDOW_MS = 24 * 60 * 60 * 1000
+const MAX_RESET_OTP_REQUESTS = 3
+const MAX_RESET_OTP_DAILY_REQUESTS = 10
 
 const MAX_LOGIN_ATTEMPTS = 5
 const LOGIN_LOCKOUT_MS = 15 * 60 * 1000
@@ -55,34 +60,45 @@ const resetSchema = z.object({
 // Keep registration and password-reset limits separate.
 const registerOtpLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 5,
+  limit: 20,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
     success: false,
-    message: 'Too many registration attempts. Please wait 15 minutes and try again.',
+    message: 'Too many registration attempts from this network. Please wait and try again.',
   },
 })
 
 const resetOtpLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 5,
+  limit: 20,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
     success: false,
-    message: 'Too many password-reset attempts. Please wait 15 minutes and try again.',
+    message: 'Too many password-recovery requests from this network. Please wait and try again.',
   },
 })
 
 const otpVerifyLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 10,
+  limit: 30,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
     success: false,
-    message: 'Too many verification attempts. Please try again later.',
+    message: 'Too many verification attempts from this network. Please wait and try again.',
+  },
+})
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many login requests from this network. Please wait and try again.',
   },
 })
 
@@ -112,6 +128,18 @@ function hashValue(value) {
   return createHash('sha256').update(value).digest('hex')
 }
 
+function hashOtp(otp, email, purpose) {
+  const secret = process.env.OTP_HASH_SECRET || process.env.SESSION_SECRET
+
+  if (!secret) {
+    throw new Error('OTP hashing secret is not configured.')
+  }
+
+  return createHmac('sha256', secret)
+    .update(`${normalizeEmail(email)}:${purpose}:${otp}`)
+    .digest('hex')
+}
+
 function safeHashCompare(a, b) {
   const first = Buffer.from(a, 'hex')
   const second = Buffer.from(b, 'hex')
@@ -123,34 +151,138 @@ function generateOtp() {
   return String(randomInt(0, 1_000_000)).padStart(6, '0')
 }
 
-async function createOtpChallenge({
+async function createLimitedOtpChallenge({
   email,
   purpose,
   pendingFullName,
   pendingPasswordHash,
 }) {
   const otp = generateOtp()
-  const now = new Date()
 
-  // Invalidate older codes for this email and purpose.
-  await prisma.otpChallenge.deleteMany({
-    where: {
-      email,
-      purpose,
-      consumedAt: null,
-    },
+  const result = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`
+      SELECT 1::int AS locked
+      FROM (
+        SELECT pg_advisory_xact_lock(
+          hashtextextended(${`${purpose}:${email}`}, 1)
+        )
+      ) AS lock_result
+    `
+
+    const now = new Date()
+    const windowStart = new Date(now.getTime() - RESET_OTP_WINDOW_MS)
+    const dailyWindowStart = new Date(now.getTime() - RESET_OTP_DAILY_WINDOW_MS)
+
+    const [recentChallenges, dailyChallenges, oldestDailyChallenge, latestChallenge] = await Promise.all([
+      tx.otpChallenge.findMany({
+        where: {
+          email,
+          purpose,
+          createdAt: { gte: windowStart },
+        },
+        orderBy: { createdAt: 'asc' },
+        select: { createdAt: true },
+      }),
+      tx.otpChallenge.count({
+        where: {
+          email,
+          purpose,
+          createdAt: { gte: dailyWindowStart },
+        },
+      }),
+      tx.otpChallenge.findFirst({
+        where: {
+          email,
+          purpose,
+          createdAt: { gte: dailyWindowStart },
+        },
+        orderBy: { createdAt: 'asc' },
+        select: { createdAt: true },
+      }),
+      tx.otpChallenge.findFirst({
+        where: { email, purpose },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true },
+      }),
+    ])
+
+    if (latestChallenge) {
+      const cooldownEndsAt = new Date(
+        latestChallenge.createdAt.getTime() + RESET_OTP_RESEND_COOLDOWN_MS
+      )
+
+      if (cooldownEndsAt > now) {
+        const retryAfterSeconds = Math.max(
+          1,
+          Math.ceil((cooldownEndsAt.getTime() - now.getTime()) / 1000)
+        )
+
+        return {
+          limited: true,
+          retryAfterSeconds,
+          message: `Please wait ${retryAfterSeconds} seconds before requesting another OTP.`,
+        }
+      }
+    }
+
+    if (recentChallenges.length >= MAX_RESET_OTP_REQUESTS) {
+      const retryAt = new Date(
+        recentChallenges[0].createdAt.getTime() + RESET_OTP_WINDOW_MS
+      )
+      const retryAfterSeconds = Math.max(
+        1,
+        Math.ceil((retryAt.getTime() - now.getTime()) / 1000)
+      )
+
+      return {
+        limited: true,
+        retryAfterSeconds,
+        message: 'You have reached the maximum of 3 OTP requests in 15 minutes. Please try again after the cooldown.',
+      }
+    }
+
+    if (dailyChallenges >= MAX_RESET_OTP_DAILY_REQUESTS && oldestDailyChallenge) {
+      const retryAt = new Date(
+        oldestDailyChallenge.createdAt.getTime() + RESET_OTP_DAILY_WINDOW_MS
+      )
+      const retryAfterSeconds = Math.max(
+        1,
+        Math.ceil((retryAt.getTime() - now.getTime()) / 1000)
+      )
+
+      return {
+        limited: true,
+        retryAfterSeconds,
+        message: 'You have reached the maximum of 10 OTP requests in 24 hours. Please try again after the cooldown.',
+      }
+    }
+
+    await tx.otpChallenge.updateMany({
+      where: {
+        email,
+        purpose,
+        consumedAt: null,
+      },
+      data: { consumedAt: now },
+    })
+
+    const challenge = await tx.otpChallenge.create({
+      data: {
+        email,
+        purpose,
+        codeHash: hashOtp(otp, email, purpose),
+        expiresAt: new Date(now.getTime() + OTP_EXPIRY_MS),
+        pendingFullName,
+        pendingPasswordHash,
+      },
+    })
+
+    return { challenge }
   })
 
-  const challenge = await prisma.otpChallenge.create({
-    data: {
-      email,
-      purpose,
-      codeHash: hashValue(otp),
-      expiresAt: new Date(now.getTime() + OTP_EXPIRY_MS),
-      pendingFullName,
-      pendingPasswordHash,
-    },
-  })
+  if (result.limited) {
+    return result
+  }
 
   try {
     await sendOtpEmail({
@@ -160,14 +292,41 @@ async function createOtpChallenge({
         purpose === 'ADMIN_REGISTRATION' ? 'registration' : 'password-reset',
     })
   } catch (error) {
-    await prisma.otpChallenge.delete({
-      where: { id: challenge.id },
+    await prisma.otpChallenge.updateMany({
+      where: {
+        id: result.challenge.id,
+        consumedAt: null,
+      },
+      data: { consumedAt: new Date() },
     }).catch(() => {})
 
-    throw error
+    const deliveryError = new Error('OTP_EMAIL_DELIVERY_FAILED')
+    deliveryError.cause = error
+    throw deliveryError
   }
 
-  return challenge
+  return result
+}
+
+async function createOtpChallenge({
+  email,
+  purpose,
+  pendingFullName,
+  pendingPasswordHash,
+}) {
+  return createLimitedOtpChallenge({
+    email,
+    purpose,
+    pendingFullName,
+    pendingPasswordHash,
+  })
+}
+
+async function createPasswordResetOtpChallenge(email) {
+  return createLimitedOtpChallenge({
+    email,
+    purpose: 'ADMIN_PASSWORD_RESET',
+  })
 }
 
 async function verifyOtp(challenge, submittedOtp) {
@@ -184,7 +343,7 @@ async function verifyOtp(challenge, submittedOtp) {
 
   const matches = safeHashCompare(
     challenge.codeHash,
-    hashValue(submittedOtp)
+    hashOtp(submittedOtp, challenge.email, challenge.purpose)
   )
 
   if (!matches) {
@@ -258,19 +417,34 @@ router.post('/register', registerOtpLimiter, async (req, res, next) => {
 
     const pendingPasswordHash = await bcrypt.hash(password, 12)
 
-    await createOtpChallenge({
+    const otpResult = await createOtpChallenge({
       email,
       purpose: 'ADMIN_REGISTRATION',
       pendingFullName: name,
       pendingPasswordHash,
     })
 
+    if (otpResult.limited) {
+      return res.status(429).json({
+        success: false,
+        message: otpResult.message,
+        retryAfterSeconds: otpResult.retryAfterSeconds,
+      })
+    }
+
     return res.status(200).json({
       success: true,
       requiresOtp: true,
-      message: 'A verification code has been sent if email delivery is available.',
+      retryAfterSeconds: Math.ceil(RESET_OTP_RESEND_COOLDOWN_MS / 1000),
+      message: 'Verification code sent successfully. It will expire in 5 minutes.',
     })
   } catch (error) {
+    if (error?.message === 'OTP_EMAIL_DELIVERY_FAILED') {
+      return res.status(503).json({
+        success: false,
+        message: 'Unable to send the verification code right now. Please try again later.',
+      })
+    }
     return next(error)
   }
 })
@@ -372,7 +546,7 @@ router.post('/verify-registration-otp', otpVerifyLimiter, async (req, res, next)
 })
 
 // Admin login
-router.post('/login', async (req, res, next) => {
+router.post('/login', loginLimiter, async (req, res, next) => {
   try {
     const parsed = loginSchema.safeParse(req.body)
 
@@ -509,7 +683,7 @@ router.post('/login', async (req, res, next) => {
   }
 })
 
-// Start password recovery. Do not reveal whether the email exists.
+// Start password recovery and resend OTP with per-email database limits.
 router.post('/forgot-password', resetOtpLimiter, async (req, res, next) => {
   try {
     const parsed = emailSchema.safeParse(req.body)
@@ -528,18 +702,35 @@ router.post('/forgot-password', resetOtpLimiter, async (req, res, next) => {
       select: { id: true },
     })
 
-    if (admin) {
-      await createOtpChallenge({
-        email,
-        purpose: 'ADMIN_PASSWORD_RESET',
+    if (!admin) {
+      return res.status(404).json({
+        success: false,
+        message: 'This email is not eligible for Admin password recovery. Please check your registered Admin email.',
+      })
+    }
+
+    const otpResult = await createPasswordResetOtpChallenge(email)
+
+    if (otpResult.limited) {
+      return res.status(429).json({
+        success: false,
+        message: otpResult.message,
+        retryAfterSeconds: otpResult.retryAfterSeconds,
       })
     }
 
     return res.status(200).json({
       success: true,
-      message: 'If the account is eligible, a verification code will be sent.',
+      retryAfterSeconds: Math.ceil(RESET_OTP_RESEND_COOLDOWN_MS / 1000),
+      message: 'Verification code sent successfully. It will expire in 5 minutes.',
     })
   } catch (error) {
+    if (error?.message === 'OTP_EMAIL_DELIVERY_FAILED') {
+      return res.status(503).json({
+        success: false,
+        message: 'Unable to send the verification code right now. Please try again later.',
+      })
+    }
     return next(error)
   }
 })
