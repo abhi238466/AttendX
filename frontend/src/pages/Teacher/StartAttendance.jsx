@@ -337,7 +337,6 @@ function StartAttendance({ onBack }) {
               }}
               placeholder="e.g. MCA"
               maxLength={150}
-              required
               aria-invalid={Boolean(fieldErrors.course)}
               aria-describedby={fieldErrors.course ? 'course-error' : undefined}
             />
@@ -360,7 +359,6 @@ function StartAttendance({ onBack }) {
               }}
               placeholder="e.g. DevOps on Cloud"
               maxLength={150}
-              required
               aria-invalid={Boolean(fieldErrors.subject)}
               aria-describedby={fieldErrors.subject ? 'subject-error' : undefined}
             />
@@ -420,7 +418,6 @@ function StartAttendance({ onBack }) {
                     }
                     placeholder={`Section ${index + 1}, e.g. G1`}
                     maxLength={50}
-                    required={index === 0}
                     aria-invalid={Boolean(fieldErrors.sections)}
                   />
 
@@ -474,7 +471,6 @@ function StartAttendance({ onBack }) {
                 setDate(event.target.value)
                 clearFieldError('date')
               }}
-              required
               aria-invalid={Boolean(fieldErrors.date)}
             />
             {fieldErrors.date && (
@@ -492,7 +488,6 @@ function StartAttendance({ onBack }) {
               id="attendance-duration"
               value={durationMinutes}
               onChange={(event) => setDurationMinutes(event.target.value)}
-              required
             >
               <option value="1">1 minute</option>
               <option value="2">2 minutes</option>
@@ -519,7 +514,6 @@ function StartAttendance({ onBack }) {
                 clearFieldError('classStartTime')
                 clearFieldError('classEndTime')
               }}
-              required
               aria-invalid={Boolean(fieldErrors.classStartTime)}
             />
             {fieldErrors.classStartTime && (
@@ -539,7 +533,6 @@ function StartAttendance({ onBack }) {
                 setClassEndTime(event.target.value)
                 clearFieldError('classEndTime')
               }}
-              required
               aria-invalid={Boolean(fieldErrors.classEndTime)}
             />
             {fieldErrors.classEndTime && (
