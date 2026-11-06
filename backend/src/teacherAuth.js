@@ -32,7 +32,10 @@ const TEACHER_LOGIN_LOCK_MS = 15 * 60 * 1000
 async function getActiveTeacherLoginLock(email) {
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`
-      SELECT pg_advisory_xact_lock(hashtext(${email}))
+      SELECT 1::int AS locked
+      FROM (
+        SELECT pg_advisory_xact_lock(hashtext(${email}))
+      ) AS lock_result
     `
 
     const record = await tx.teacherLoginLockout.findUnique({
@@ -54,7 +57,10 @@ async function recordTeacherLoginFailure(email) {
   return prisma.$transaction(async (tx) => {
     // Serialize failures for this email across concurrent requests and backend instances.
     await tx.$queryRaw`
-      SELECT pg_advisory_xact_lock(hashtext(${email}))
+      SELECT 1::int AS locked
+      FROM (
+        SELECT pg_advisory_xact_lock(hashtext(${email}))
+      ) AS lock_result
     `
 
     const now = new Date()
@@ -100,7 +106,10 @@ async function recordTeacherLoginFailure(email) {
 async function clearTeacherLoginFailures(email) {
   await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`
-      SELECT pg_advisory_xact_lock(hashtext(${email}))
+      SELECT 1::int AS locked
+      FROM (
+        SELECT pg_advisory_xact_lock(hashtext(${email}))
+      ) AS lock_result
     `
     await tx.teacherLoginLockout.deleteMany({ where: { email } })
   })
