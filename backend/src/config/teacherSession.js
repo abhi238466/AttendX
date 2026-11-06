@@ -4,6 +4,9 @@ import { createHmac } from 'node:crypto'
 import session from 'express-session'
 import connectPgSimple from 'connect-pg-simple'
 import pg from 'pg'
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const { Pool } = pg
 const PgSession = connectPgSimple(session)
@@ -22,10 +25,18 @@ const teacherSessionSecret = createHmac('sha256', sessionSecret)
 
 const isProduction = process.env.NODE_ENV === 'production'
 
+const certificatePath = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../certs/prod-ca-2021.crt'
+)
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.DATABASE_URL?.includes('supabase')
-    ? { rejectUnauthorized: false }
+    ? {
+        ca: readFileSync(certificatePath, 'utf8'),
+        rejectUnauthorized: true,
+      }
     : undefined,
 })
 
