@@ -58,6 +58,7 @@ const tokenRotationLimiter = rateLimit({
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => req.teacher.id,
   message: {
     error: 'Too many token rotation requests. Please wait before retrying.',
   },
@@ -728,6 +729,24 @@ router.patch(
         }
 
         if (attendanceSession.status === 'CANCELLED') {
+          const closedAt = new Date()
+
+          await tx.qrCodeToken.updateMany({
+            where: {
+              attendanceSessionId: attendanceSession.id,
+              expiresAt: { gt: closedAt },
+            },
+            data: {
+              expiresAt: closedAt,
+            },
+          })
+
+          await tx.attendanceDeviceLock.deleteMany({
+            where: {
+              attendanceSessionId: attendanceSession.id,
+            },
+          })
+
           return { alreadyCancelled: true }
         }
 

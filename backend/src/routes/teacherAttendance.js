@@ -152,13 +152,30 @@
 
     const attendanceIpLimiter = rateLimit({
       windowMs: 60 * 1000,
-      limit: 20000,
+      limit: 150000,
       keyGenerator: (req) => ipKeyGenerator(req.ip),
       standardHeaders: 'draft-8',
       legacyHeaders: false,
       message: {
         success: false,
         message: 'Too many attendance requests from this network. Please retry shortly.',
+      },
+    })
+
+    const symbolPollingLimiter = rateLimit({
+      windowMs: 60 * 1000,
+      limit: 40,
+      keyGenerator: (req) => {
+        const deviceToken = req.body?.deviceToken
+        return deviceToken
+          ? hashToken(String(deviceToken))
+          : ipKeyGenerator(req.ip)
+      },
+      standardHeaders: 'draft-8',
+      legacyHeaders: false,
+      message: {
+        success: false,
+        message: 'Symbol status is being checked too frequently. Please wait and try again.',
       },
     })
 
@@ -856,8 +873,7 @@
         req.attendanceRequestReceivedAt = new Date()
         next()
       },
-      attendanceLimiter,
-      attendanceIpLimiter,
+      symbolPollingLimiter,
       async (req, res) => {
         const parsed = symbolAccessSchema.safeParse(req.body)
         if (!parsed.success) return fail(res, 400, 'Please verify the current QR/text code again.')
@@ -2363,6 +2379,36 @@
 
             if (!symbolChallenge) return { failure: 'SYMBOL_CHALLENGE_MISSING' }
 
+            const activeZones = await tx.geofenceZone.findMany({
+              where: { isActive: true },
+              select: { latitude: true, longitude: true, radiusMeters: true },
+            })
+
+            if (activeZones.length === 0) return { failure: 'NO_ACTIVE_GEOFENCE_ZONES' }
+
+            let distanceMeters = Infinity
+            let conservativeDistanceMeters = Infinity
+            let insideZone = false
+
+            for (const zone of activeZones) {
+              const distance = calculateDistanceMeters(
+                zone.latitude,
+                zone.longitude,
+                data.latitude,
+                data.longitude,
+              )
+              const conservativeDistance = distance + data.locationAccuracyMeters
+
+              if (conservativeDistance < conservativeDistanceMeters) {
+                conservativeDistanceMeters = conservativeDistance
+                distanceMeters = distance
+              }
+
+              if (isWithinRadius(conservativeDistance, zone.radiusMeters)) insideZone = true
+            }
+
+            if (!insideZone) return { failure: 'OUTSIDE_RADIUS' }
+
             const attempt = await tx.symbolChallengeAttempt.findUnique({
               where: {
                 symbolChallengeId_deviceTokenHash: {
@@ -2472,36 +2518,6 @@
                 data: { status: 'ACCEPTED', acceptedAt: requestReceivedAt },
               })
             }
-
-            const activeZones = await tx.geofenceZone.findMany({
-              where: { isActive: true },
-              select: { latitude: true, longitude: true, radiusMeters: true },
-            })
-
-            if (activeZones.length === 0) return { failure: 'NO_ACTIVE_GEOFENCE_ZONES' }
-
-            let distanceMeters = Infinity
-            let conservativeDistanceMeters = Infinity
-            let insideZone = false
-
-            for (const zone of activeZones) {
-              const distance = calculateDistanceMeters(
-                zone.latitude,
-                zone.longitude,
-                data.latitude,
-                data.longitude,
-              )
-              const conservativeDistance = distance + data.locationAccuracyMeters
-
-              if (conservativeDistance < conservativeDistanceMeters) {
-                conservativeDistanceMeters = conservativeDistance
-                distanceMeters = distance
-              }
-
-              if (isWithinRadius(conservativeDistance, zone.radiusMeters)) insideZone = true
-            }
-
-            if (!insideZone) return { failure: 'OUTSIDE_RADIUS' }
 
             const consumed = await tx.attendanceChallenge.updateMany({
               where: {

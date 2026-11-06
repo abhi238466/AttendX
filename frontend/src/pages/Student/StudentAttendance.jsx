@@ -521,6 +521,7 @@ export default function StudentAttendance() {
       setStage('roll')
     } catch (err) {
       setError(err.message || 'Could not verify the code.')
+      setStage('code')
     } finally {
       codeRequestPendingRef.current = false
       setBusy(false)
