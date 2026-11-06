@@ -1,4 +1,3 @@
-
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -140,7 +139,7 @@ function StartAttendance({ onBack }) {
     const errors = {}
 
     if (!course.trim()) {
-      errors.course = 'Please enter the course name.'
+      errors.course = 'Please fill in this field.'
     }
 
     if (!subject.trim()) {
