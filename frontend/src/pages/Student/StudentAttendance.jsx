@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import * as LucideIcons from 'lucide-react'
 import {
   ArrowLeft,
   CheckCircle2,
@@ -18,9 +19,196 @@ const API_BASE =
   ''
 
 const MAX_LOCATION_ACCURACY_METERS = 100
+const SYMBOL_DISPLAY_WINDOW_SECONDS = 25
+
+const SYMBOL_ICON_NAMES = {
+  "circle": "Circle",
+  "triangle": "Triangle",
+  "square": "Square",
+  "rectangle": "RectangleHorizontal",
+  "diamond": "Diamond",
+  "star": "Star",
+  "hexagon": "Hexagon",
+  "pentagon": "Pentagon",
+  "octagon": "Octagon",
+  "oval": "Circle",
+  "rhombus": "Diamond",
+  "parallelogram": "RectangleHorizontal",
+  "trapezoid": "Shapes",
+  "cross": "Cross",
+  "plus": "Plus",
+  "minus": "Minus",
+  "equals": "Equal",
+  "asterisk": "Asterisk",
+  "semi-circle": "Circle",
+  "quarter-circle": "PieChart",
+  "arrow-up": "ArrowUp",
+  "arrow-down": "ArrowDown",
+  "arrow-left": "ArrowLeft",
+  "arrow-right": "ArrowRight",
+  "arrow-up-left": "ArrowUpLeft",
+  "arrow-up-right": "ArrowUpRight",
+  "arrow-down-left": "ArrowDownLeft",
+  "arrow-down-right": "ArrowDownRight",
+  "chevron-up": "ChevronUp",
+  "chevron-down": "ChevronDown",
+  "chevron-left": "ChevronLeft",
+  "chevron-right": "ChevronRight",
+  "double-arrow": "ArrowLeftRight",
+  "arrow-circle": "CircleArrowUp",
+  "line-horizontal": "Minus",
+  "line-vertical": "BetweenVerticalStart",
+  "line-diagonal": "Slash",
+  "line-zigzag": "Activity",
+  "wave": "Waves",
+  "spiral": "Orbit",
+  "cube": "Box",
+  "sphere": "Globe",
+  "cylinder": "Cylinder",
+  "cone": "Cone",
+  "pyramid": "Triangle",
+  "prism": "Shapes",
+  "torus": "CircleDot",
+  "ring": "Circle",
+  "double-ring": "Disc",
+  "hollow-square": "Square",
+  "target": "Target",
+  "bullseye": "CircleDot",
+  "compass": "Compass",
+  "gear": "Settings",
+  "key": "KeyRound",
+  "lock": "Lock",
+  "shield": "Shield",
+  "crown": "Crown",
+  "bell": "Bell",
+  "flag": "Flag",
+  "anchor": "Anchor",
+  "leaf": "Leaf",
+  "bolt": "Zap",
+  "lightning": "Zap",
+  "cloud": "Cloud",
+  "sun": "Sun",
+  "moon": "Moon",
+  "mountain": "Mountain",
+  "tree": "TreePine",
+  "flower": "Flower2",
+  "book": "Book",
+  "bookmark": "Bookmark",
+  "folder": "Folder",
+  "file": "File",
+  "document": "FileText",
+  "calendar": "CalendarDays",
+  "clock": "Clock",
+  "hourglass": "Hourglass",
+  "calculator": "Calculator",
+  "ruler": "Ruler",
+  "pencil": "Pencil",
+  "pen": "PenLine",
+  "scissors": "Scissors",
+  "magnifying-glass": "Search",
+  "telescope": "Telescope",
+  "microscope": "Microscope",
+  "binoculars": "Binoculars",
+  "camera": "Camera",
+  "printer": "Printer",
+  "monitor": "Monitor",
+  "laptop": "Laptop",
+  "keyboard": "Keyboard",
+  "mouse": "Mouse",
+  "smartphone": "Smartphone",
+  "battery": "Battery",
+  "plug": "Plug",
+  "satellite": "Satellite",
+  "globe": "Globe",
+  "map-pin": "MapPin",
+  "location-marker": "MapPinned"
+}
+
+function SymbolIcon({ symbol }) {
+  const Icon = LucideIcons[SYMBOL_ICON_NAMES[symbol]] || LucideIcons.Shapes
+  return <Icon className="student-symbol-icon" size={32} strokeWidth={2.1} aria-hidden="true" />
+}
 
 function readError(payload, fallback) {
   return payload?.message || payload?.error || fallback
+}
+
+function getLocationFeedback(message, status = 0) {
+  const normalized = String(message || '').toLowerCase()
+
+  if (status === 403 || normalized.includes('outside the permitted campus') || normalized.includes('outside the campus')) {
+    return {
+      type: 'error',
+      title: 'Aap campus ke permitted area ke bahar hain',
+      message: 'Attendance ke liye active campus area ke andar hona zaroori hai. Campus ke andar aakar current location dobara verify karein.',
+    }
+  }
+
+  if (normalized.includes('accuracy') || normalized.includes('precise location')) {
+    return {
+      type: 'warning',
+      title: 'GPS accuracy sufficient nahi hai',
+      message: 'Phone settings mein Location aur Precise Location ON karein. GPS signal behtar hone ke liye open area mein jaakar location dobara capture karein.',
+    }
+  }
+
+  if (normalized.includes('permission') || normalized.includes('denied') || normalized.includes('allow location')) {
+    return {
+      type: 'error',
+      title: 'Location permission nahi mili',
+      message: 'Browser ya phone settings mein AttendX ke liye Location permission allow karein. Permission allow karne ke baad dobara try karein.',
+    }
+  }
+
+  if (normalized.includes('timed out') || normalized.includes('timeout')) {
+    return {
+      type: 'warning',
+      title: 'Location request ka time khatam ho gaya',
+      message: 'GPS se samay par location nahi mili. Location ON rakhein, thodi der rukkar dobara try karein.',
+    }
+  }
+
+  if (status === 503 || normalized.includes('campus location verification is currently unavailable') || normalized.includes('no active geofence')) {
+    return {
+      type: 'system',
+      title: 'Campus verification service unavailable hai',
+      message: 'Active campus geofence configuration nahi mil rahi ya service temporarily unavailable hai. Ye system-side issue ho sakta hai; administrator ko inform karein.',
+    }
+  }
+
+  if (normalized.includes('could not be determined') || normalized.includes('unavailable') || normalized.includes('position unavailable')) {
+    return {
+      type: 'warning',
+      title: 'Phone ki location detect nahi ho pa rahi',
+      message: 'GPS signal unavailable hai. Location ON karein aur open area ya window ke paas jaakar dobara try karein.',
+    }
+  }
+
+  if (normalized.includes('too old') || normalized.includes('stale') || normalized.includes('timestamp')) {
+    return {
+      type: 'warning',
+      title: 'Location reading purani ya invalid hai',
+      message: 'AttendX ko fresh location reading nahi mili. Refresh Location karke dobara verification karein.',
+    }
+  }
+
+  if (status === 429) {
+    return {
+      type: 'warning',
+      title: 'Bahut saari requests bheji gayi hain',
+      message: 'Thodi der wait karke dobara try karein. Baar-baar button press na karein.',
+    }
+  }
+
+  if (/location|campus|gps|geofence|permission|accuracy/i.test(normalized)) {
+    return {
+      type: 'error',
+      title: 'Location verification complete nahi hui',
+      message: message || 'Location verify nahi ho paayi. Dobara location capture karke try karein.',
+    }
+  }
+
+  return null
 }
 
 // Stable browser token used by the server to lock this device per attendance session.
@@ -89,6 +277,7 @@ export default function StudentAttendance() {
     section: '',
   })
   const [locationMessage, setLocationMessage] = useState('')
+  const [locationFeedback, setLocationFeedback] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
@@ -127,9 +316,17 @@ export default function StudentAttendance() {
 
     const updateCountdown = () => {
       const serverNow = Date.now() + symbolClockOffset
+      const challengeStartedAt = new Date(symbolChallenge.startedAt).getTime()
+      const challengeExpiresAt = new Date(symbolChallenge.expiresAt).getTime()
+      const displayDeadline = Number.isFinite(challengeStartedAt)
+        ? Math.min(
+            challengeStartedAt + SYMBOL_DISPLAY_WINDOW_SECONDS * 1000,
+            challengeExpiresAt,
+          )
+        : challengeExpiresAt
       const remaining = Math.max(
         0,
-        Math.ceil((new Date(symbolChallenge.expiresAt).getTime() - serverNow) / 1000),
+        Math.ceil((displayDeadline - serverNow) / 1000),
       )
       setSymbolSecondsLeft(remaining)
 
@@ -318,6 +515,7 @@ export default function StudentAttendance() {
             : (payload.sections?.[0] || ''),
       }))
       setLocationMessage('')
+      setLocationFeedback(null)
       setSymbolChallenge(null)
       setSelectedSymbols(['', '', ''])
       setStage('roll')
@@ -338,18 +536,39 @@ export default function StudentAttendance() {
 
       navigator.geolocation.getCurrentPosition(
         (position) => {
+          const capturedAt = Number(position.timestamp)
+          if (!Number.isFinite(capturedAt) || capturedAt <= 0) {
+            reject(new Error('The location provider returned an invalid timestamp. Please capture your location again.'))
+            return
+          }
+
+          const { latitude, longitude, accuracy } = position.coords
+          if (
+            !Number.isFinite(latitude) ||
+            !Number.isFinite(longitude) ||
+            !Number.isFinite(accuracy) ||
+            latitude < -90 ||
+            latitude > 90 ||
+            longitude < -180 ||
+            longitude > 180 ||
+            accuracy <= 0
+          ) {
+            reject(new Error('The GPS provider returned invalid coordinates or accuracy. Please capture your location again.'))
+            return
+          }
+
           resolve({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-            locationAccuracyMeters: position.coords.accuracy,
-            locationCapturedAt: new Date().toISOString(),
+            latitude,
+            longitude,
+            locationAccuracyMeters: accuracy,
+            locationCapturedAt: new Date(capturedAt).toISOString(),
           })
         },
         (geoError) => {
           const messages = {
-            1: 'Location permission was denied. Allow location access and try again.',
-            2: 'Your location could not be determined. Please try again outdoors or near a window.',
-            3: 'Location request timed out. Please try again.',
+            1: 'Location permission was denied. Allow location access in browser and phone settings, then try again.',
+            2: 'Your phone could not determine its location. Turn on GPS and try again outdoors or near a window.',
+            3: 'Location request timed out. Keep GPS enabled, wait a few seconds and try again.',
           }
           reject(new Error(messages[geoError.code] || 'Could not get your location. Please try again.'))
         },
@@ -388,7 +607,7 @@ export default function StudentAttendance() {
       }
 
       activateSymbolChallenge(payload.symbolChallenge)
-      setLocationMessage('Campus location verified. Complete the three symbol selections within 15 seconds.')
+      setLocationMessage('Campus location verified. Complete the three symbol selections within 25 seconds.')
     } catch (err) {
       const message = err.message || 'Could not load the symbol challenge.'
       setError(message)
@@ -401,6 +620,18 @@ export default function StudentAttendance() {
       setBusy(false)
     }
   }
+
+  useEffect(() => {
+    if (stage !== 'waiting' || !challenge) return undefined
+
+    const waitingPoll = window.setInterval(() => {
+      refreshSymbolChallenge()
+    }, 2500)
+
+    return () => window.clearInterval(waitingPoll)
+    // Poll only while this verified attendance challenge is waiting for the teacher.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage, challenge])
 
   async function startSymbolChallenge(event) {
     event.preventDefault()
@@ -435,12 +666,15 @@ export default function StudentAttendance() {
 
     symbolChallengeRequestPendingRef.current = true
     setBusy(true)
-    setLocationMessage('Checking your campus location…')
+    setLocationFeedback(null)
+    setLocationMessage('Phone se current GPS location li ja rahi hai…')
 
     try {
       const currentLocation = await getCurrentLocation()
       if (currentLocation.locationAccuracyMeters > MAX_LOCATION_ACCURACY_METERS) {
-        throw new Error('Location accuracy is too low. Try again with precise location enabled.')
+        const accuracyError = `GPS accuracy ±${Math.round(currentLocation.locationAccuracyMeters)}m hai. Maximum allowed accuracy 100m hai.`
+        setLocationFeedback(getLocationFeedback(accuracyError))
+        throw new Error(accuracyError)
       }
 
       const requestBody = {
@@ -460,7 +694,7 @@ export default function StudentAttendance() {
 
       if (initialResponse.ok && initialPayload.success && initialPayload.symbolChallenge) {
         activateSymbolChallenge(initialPayload.symbolChallenge)
-        setLocationMessage('Campus location verified. Complete the three symbol selections within 15 seconds.')
+        setLocationMessage('Campus location verified. Complete the three symbol selections within 25 seconds.')
         return
       }
 
@@ -468,6 +702,7 @@ export default function StudentAttendance() {
       const isWaiting = initialResponse.status === 202 && initialPayload.waiting
 
       if (!isWaiting) {
+        setLocationFeedback(getLocationFeedback(initialMessage, initialResponse.status))
         throw new Error(initialMessage || 'Campus location verification could not be completed.')
       }
 
@@ -475,6 +710,7 @@ export default function StudentAttendance() {
       setStage('waiting')
     } catch (err) {
       setLocationMessage('')
+      setLocationFeedback((current) => current || getLocationFeedback(err.message))
       setError(err.message || 'Could not start symbol verification.')
       setStage('roll')
     } finally {
@@ -532,7 +768,7 @@ export default function StudentAttendance() {
     }
 
     if (symbolSecondsLeft <= 0) {
-      setError('The 15-second selection window has ended. Ask your teacher to generate a new sequence.')
+      setError('The 25-second selection window has ended. Ask your teacher to generate a new sequence.')
       return
     }
 
@@ -551,7 +787,9 @@ export default function StudentAttendance() {
           ? cachedLocation
           : await getCurrentLocation()
       if (freshLocation.locationAccuracyMeters > MAX_LOCATION_ACCURACY_METERS) {
-        throw new Error('Location accuracy is too low. Enable precise location and try again.')
+        const accuracyError = `GPS accuracy ±${Math.round(freshLocation.locationAccuracyMeters)}m hai. Maximum allowed accuracy 100m hai.`
+        setLocationFeedback(getLocationFeedback(accuracyError))
+        throw new Error(accuracyError)
       }
 
       const response = await fetch(`${API_BASE}/api/attendance/symbol/submit`, {
@@ -572,12 +810,21 @@ export default function StudentAttendance() {
       const payload = await response.json().catch(() => ({}))
 
       if (!response.ok || payload.success === false) {
-        throw new Error(readError(payload, 'Symbol verification or attendance submission failed.'))
+        const responseMessage = readError(payload, 'Symbol verification or attendance submission failed.')
+        setLocationFeedback(getLocationFeedback(responseMessage, response.status))
+        throw new Error(responseMessage)
       }
 
-      const deadline = new Date(symbolChallenge.expiresAt).getTime()
+      const challengeStartedAt = new Date(symbolChallenge.startedAt).getTime()
+      const challengeExpiresAt = new Date(symbolChallenge.expiresAt).getTime()
+      const displayDeadline = Number.isFinite(challengeStartedAt)
+        ? Math.min(
+            challengeStartedAt + SYMBOL_DISPLAY_WINDOW_SECONDS * 1000,
+            challengeExpiresAt,
+          )
+        : challengeExpiresAt
       const serverNow = Date.now() + symbolClockOffset
-      const remainingMs = Math.max(0, deadline - serverNow)
+      const remainingMs = Math.max(0, displayDeadline - serverNow)
 
       setLocationMessage('Attendance has been saved. Completing the verification window…')
       fullscreenActiveRef.current = false
@@ -594,6 +841,7 @@ export default function StudentAttendance() {
       setSelectedSymbols(['', '', ''])
       setStage('success')
     } catch (err) {
+      setLocationFeedback((current) => current || getLocationFeedback(err.message))
       setError(err.message || 'Attendance could not be submitted.')
       if (/already marked|already been marked|locked|three incorrect attempts/i.test(err.message || '')) {
         setChallenge(null)
@@ -672,6 +920,7 @@ export default function StudentAttendance() {
     violationIncidentIdRef.current = ''
     fullscreenActiveRef.current = false
     setLocationMessage('')
+    setLocationFeedback(null)
     setError('')
     setSuccess('')
     setStage('code')
@@ -777,6 +1026,24 @@ export default function StudentAttendance() {
                   </div>
                 </div>
                 {locationMessage && <p className="student-location-message">{locationMessage}</p>}
+                {locationFeedback && (
+                  <div className={`student-location-feedback is-${locationFeedback.type}`} role="status" aria-live="polite">
+                    <strong>{locationFeedback.title}</strong>
+                    <p>{locationFeedback.message}</p>
+                    <button
+                      type="button"
+                      className="student-location-retry"
+                      onClick={() => {
+                        setLocationFeedback(null)
+                        setError('')
+                        startSymbolChallenge({ preventDefault: () => {} })
+                      }}
+                      disabled={busy}
+                    >
+                      Dobara location verify karein
+                    </button>
+                  </div>
+                )}
               </div>
               <button className="student-primary-button" type="submit" disabled={busy}>
                 {busy ? <LoaderCircle className="student-spin" size={18} /> : <ShieldCheck size={18} />}
@@ -794,21 +1061,55 @@ export default function StudentAttendance() {
             <div className="student-panel-icon"><LoaderCircle className="student-spin" size={23} /></div>
             <h2>Attendance saved</h2>
             <p className="student-panel-copy">
-              The server has confirmed your attendance record. Please wait for the 15-second verification window to finish.
+              The server has confirmed your attendance record. Please wait for the 25-second verification window to finish.
             </p>
           </section>
         )}
 
         {stage === 'waiting' && challenge && (
-          <button
-            className="student-waiting-refresh-button"
-            type="button"
-            onClick={refreshSymbolChallenge}
-            disabled={busy}
-            aria-label="Refresh symbol challenge"
-          >
-            {busy ? 'Refreshing…' : 'Refresh'}
-          </button>
+          <section className="student-panel student-symbol-waiting-panel" aria-live="polite">
+            <div className="student-panel-icon">
+              {busy
+                ? <LoaderCircle className="student-spin" size={23} />
+                : <ShieldCheck size={23} />}
+            </div>
+
+            <h2>Waiting for Teacher Verification</h2>
+
+            <p className="student-panel-copy">
+              Your campus verification is complete. Please wait while your teacher
+              generates the classroom symbol challenge.
+            </p>
+
+            <div className="student-symbol-waiting-status">
+              <span className="student-symbol-waiting-dot" />
+              <span>
+                {busy
+                  ? 'Checking for the latest symbol challenge…'
+                  : 'Waiting for your teacher to generate the symbols…'}
+              </span>
+            </div>
+
+            {error && (
+              <div className="student-alert student-alert-error" role="status">
+                {error}
+              </div>
+            )}
+
+            <p className="student-symbol-waiting-hint">
+              This page checks automatically. You do not need to refresh it manually.
+            </p>
+
+            <button
+              className="student-waiting-refresh-button"
+              type="button"
+              onClick={refreshSymbolChallenge}
+              disabled={busy}
+              aria-label="Check for symbol challenge now"
+            >
+              {busy ? 'Checking…' : 'Check Now'}
+            </button>
+          </section>
         )}
 
         {stage === 'symbols' && symbolChallenge && (
@@ -827,6 +1128,37 @@ export default function StudentAttendance() {
                     {violationPending ? 'Recording security event…' : 'Return to verification'}
                   </button>
                 )}
+              </div>
+            )}
+            {locationFeedback && (
+              <div className={`student-location-feedback is-${locationFeedback.type}`} role="status" aria-live="polite">
+                <strong>{locationFeedback.title}</strong>
+                <p>{locationFeedback.message}</p>
+                <button
+                  type="button"
+                  className="student-location-retry"
+                  onClick={async () => {
+                    setLocationFeedback(null)
+                    setError('')
+                    try {
+                      setLocationMessage('Fresh GPS location capture ki ja rahi hai…')
+                      const reading = await getCurrentLocation()
+                      if (reading.locationAccuracyMeters > MAX_LOCATION_ACCURACY_METERS) {
+                        throw new Error(`GPS accuracy ±${Math.round(reading.locationAccuracyMeters)}m hai. Maximum allowed accuracy 100m hai.`)
+                      }
+                      symbolLocationRef.current = reading
+                      setLocationMessage('')
+                      await verifySymbols({ preventDefault: () => {} })
+                    } catch (retryError) {
+                      setLocationMessage('')
+                      setLocationFeedback(getLocationFeedback(retryError.message))
+                      setError(retryError.message || 'Location dobara capture nahi ho paayi.')
+                    }
+                  }}
+                  disabled={busy}
+                >
+                  Dobara location capture karke submit karein
+                </button>
               </div>
             )}
             <div className="student-verified-label"><CheckCircle2 size={17} /> Campus location verified</div>
@@ -855,7 +1187,7 @@ export default function StudentAttendance() {
                         aria-pressed={selectedSymbols[rowIndex] === symbol}
                         aria-label={`Row ${rowIndex + 1}: ${symbol}`}
                       >
-                        {symbol}
+                        <SymbolIcon symbol={symbol} />
                       </button>
                     ))}
                   </div>

@@ -1,3 +1,4 @@
+
 /* ========================================
    Start Attendance Page
    Responsive CSS
@@ -263,6 +264,24 @@
 }
 
 /* ========================================
+   Validation States
+======================================== */
+
+.td-form-group input[aria-invalid='true'],
+.td-form-group select[aria-invalid='true'],
+.td-section-input-row input[aria-invalid='true'] {
+  background: #fffafa;
+  border-color: #dc5364;
+}
+
+.td-form-group input[aria-invalid='true']:focus,
+.td-form-group select[aria-invalid='true']:focus,
+.td-section-input-row input[aria-invalid='true']:focus {
+  border-color: #dc5364;
+  box-shadow: 0 0 0 3px rgb(220 83 100 / 12%);
+}
+
+/* ========================================
    Sections
 ======================================== */
 
@@ -328,18 +347,30 @@
 }
 
 /* ========================================
-   Error Message
+   Error Messages
 ======================================== */
 
 .td-form-error {
-  padding: 13px 15px;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0;
+  padding: 9px 11px;
   color: #a92738;
   background: #fff2f3;
   border: 1px solid #f5cbd1;
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.td-form-full.td-form-error {
+  padding: 13px 15px;
   border-radius: 11px;
   font-size: 13px;
   line-height: 1.65;
-  overflow-wrap: anywhere;
 }
 
 /* ========================================

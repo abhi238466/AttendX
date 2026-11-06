@@ -175,3 +175,52 @@
     transition-duration: .01ms !important;
   }
 }
+
+/* ========================================
+   Symbol Challenge Error Messages
+======================================== */
+
+.la-symbol-challenge .la-form-error {
+  margin: 11px 0 0;
+  padding: 11px 13px;
+  border: 1px solid #f2c9ce;
+  border-radius: 10px;
+  background: #fff5f5;
+  color: #a52c38;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+/* ========================================
+   Symbol Challenge Button States
+======================================== */
+
+.la-symbol-generate:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.la-symbol-generate:focus-visible {
+  outline: 3px solid rgb(101 87 232 / 22%);
+  outline-offset: 3px;
+}
+
+.la-symbol-cell {
+  overflow-wrap: anywhere;
+}
+
+/* ========================================
+   Small Screen Improvements
+======================================== */
+
+@media (max-width: 360px) {
+  .la-symbol-heading {
+    flex-wrap: wrap;
+  }
+
+  .la-symbol-heading > div {
+    min-width: 0;
+    flex: 1;
+  }
+}

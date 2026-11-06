@@ -888,7 +888,7 @@ const updateAdminProfileLimiter = rateLimit({
   },
 })
 
-async function requireAdminSession(req, res, next) {
+export async function requireAdminSession(req, res, next) {
   try {
     if (!req.session?.user || req.session.user.role !== 'ADMIN' || !req.session.user.id) {
       return res.status(401).json({

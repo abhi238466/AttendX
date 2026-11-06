@@ -966,3 +966,79 @@ transition-duration: .01ms !important;
   }
 }
 
+
+
+/* ========================================
+   Live Attendance UI refinements
+   Additive styles — existing rules preserved
+======================================== */
+
+/* Clear keyboard focus for interactive controls */
+.la-page button:focus-visible,
+.la-page a:focus-visible {
+  outline: 3px solid rgb(85 70 232 / 28%);
+  outline-offset: 3px;
+}
+
+/* Keep session end-time details readable */
+.la-session-end-time {
+  min-width: 0;
+}
+
+.la-session-end-time > span {
+  min-width: 0;
+}
+
+.la-session-end-time strong {
+  color: #315fa9;
+  font-size: 12px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.la-session-end-time strong.is-expiring {
+  color: #c44a35;
+}
+
+/* Prevent long server messages from overflowing notification cards */
+.la-toast > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.la-toast-dismiss:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+/* Disabled student link should not look interactive */
+.la-student-link.is-disabled {
+  pointer-events: none;
+}
+
+/* Keep action buttons usable on narrow screens */
+.la-confirm-cancel,
+.la-confirm-submit,
+.la-secondary-button,
+.la-close-button {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 380px) {
+  .la-code-value {
+    font-size: 30px;
+    letter-spacing: 3px;
+  }
+
+  .la-confirm-actions {
+    gap: 8px;
+  }
+
+  .la-toast {
+    padding: 12px;
+    font-size: 12px;
+  }
+}

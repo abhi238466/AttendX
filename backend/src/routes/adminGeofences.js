@@ -1,24 +1,12 @@
+
 import { Router } from 'express'
 import { z } from 'zod'
 import { prisma } from '../config/prisma.js'
+import { requireAdminSession } from '../adminAuth.js'
 
 const router = Router()
 
-function requireAdmin(req, res, next) {
-  const user = req.session?.user
-
-  if (!user || user.role !== 'ADMIN' || !user.id) {
-    return res.status(401).json({
-      success: false,
-      message: 'Admin authentication required',
-    })
-  }
-
-  req.admin = user
-  next()
-}
-
-router.use(requireAdmin)
+router.use(requireAdminSession)
 
 const geofenceSchema = z.object({
   areaName: z.string().trim().min(1).max(120),
@@ -26,11 +14,45 @@ const geofenceSchema = z.object({
   latitude: z.number().finite().min(-90).max(90),
   longitude: z.number().finite().min(-180).max(180),
   radiusMeters: z.number().int().min(1).max(1000),
-})
+}).strict()
 
 const statusSchema = z.object({
   isActive: z.boolean(),
-})
+}).strict()
+
+const idSchema = z.string().uuid()
+
+function sendError(res, status, message) {
+  return res.status(status).json({
+    success: false,
+    message,
+  })
+}
+
+function getAdminId(req) {
+  return req.session.user.id
+}
+
+async function writeGeofenceAudit(tx, req, action, zone, metadata = {}) {
+  await tx.auditLog.create({
+    data: {
+      actorType: 'ADMIN',
+      actorId: getAdminId(req),
+      action,
+      entityType: 'GeofenceZone',
+      entityId: zone.id,
+      metadata: {
+        areaName: zone.areaName,
+        zoneName: zone.zoneName,
+        latitude: zone.latitude,
+        longitude: zone.longitude,
+        radiusMeters: zone.radiusMeters,
+        isActive: zone.isActive,
+        ...metadata,
+      },
+    },
+  })
+}
 
 router.get('/', async (req, res) => {
   try {
@@ -50,198 +72,249 @@ router.get('/', async (req, res) => {
   } catch (error) {
     console.error('Geofence fetch failed:', error.message)
 
-    return res.status(500).json({
-      success: false,
-      message: 'Unable to fetch geofence zones',
-    })
+    return sendError(res, 500, 'Unable to fetch geofence zones.')
   }
 })
 
 router.post('/', async (req, res) => {
+  const validation = geofenceSchema.safeParse(req.body)
+
+  if (!validation.success) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid geofence details.',
+      errors: validation.error.flatten().fieldErrors,
+    })
+  }
+
   try {
-    const validation = geofenceSchema.safeParse(req.body)
-
-    if (!validation.success) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid geofence details',
-        errors: validation.error.flatten().fieldErrors,
+    const zone = await prisma.$transaction(async (tx) => {
+      const createdZone = await tx.geofenceZone.create({
+        data: validation.data,
       })
-    }
 
-    const zone = await prisma.geofenceZone.create({
-      data: validation.data,
+      await writeGeofenceAudit(
+        tx,
+        req,
+        'GEOFENCE_ZONE_CREATED',
+        createdZone
+      )
+
+      return createdZone
     })
 
     return res.status(201).json({
       success: true,
-      message: 'Geofence zone created successfully',
+      message: 'Geofence zone created successfully.',
       zone,
     })
   } catch (error) {
     console.error('Geofence creation failed:', error.message)
 
-    return res.status(500).json({
-      success: false,
-      message: 'Unable to create geofence zone',
-    })
+    return sendError(res, 500, 'Unable to create geofence zone.')
   }
 })
 
 router.put('/:id', async (req, res) => {
+  const idValidation = idSchema.safeParse(req.params.id)
+
+  if (!idValidation.success) {
+    return sendError(res, 400, 'Invalid geofence ID.')
+  }
+
+  const validation = geofenceSchema.safeParse(req.body)
+
+  if (!validation.success) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid geofence details.',
+      errors: validation.error.flatten().fieldErrors,
+    })
+  }
+
   try {
-    const idValidation = z.string().uuid().safeParse(req.params.id)
-
-    if (!idValidation.success) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid geofence ID',
+    const result = await prisma.$transaction(async (tx) => {
+      const existingZone = await tx.geofenceZone.findUnique({
+        where: { id: idValidation.data },
       })
-    }
 
-    const validation = geofenceSchema.safeParse(req.body)
+      if (!existingZone) {
+        return { notFound: true }
+      }
 
-    if (!validation.success) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid geofence details',
-        errors: validation.error.flatten().fieldErrors,
+      const zone = await tx.geofenceZone.update({
+        where: { id: idValidation.data },
+        data: validation.data,
       })
-    }
 
-    const existingZone = await prisma.geofenceZone.findUnique({
-      where: { id: req.params.id },
+      await writeGeofenceAudit(
+        tx,
+        req,
+        'GEOFENCE_ZONE_UPDATED',
+        zone,
+        {
+          previousValues: {
+            areaName: existingZone.areaName,
+            zoneName: existingZone.zoneName,
+            latitude: existingZone.latitude,
+            longitude: existingZone.longitude,
+            radiusMeters: existingZone.radiusMeters,
+            isActive: existingZone.isActive,
+          },
+        }
+      )
+
+      return { zone }
     })
 
-    if (!existingZone) {
-      return res.status(404).json({
-        success: false,
-        message: 'Geofence zone not found',
-      })
+    if (result.notFound) {
+      return sendError(res, 404, 'Geofence zone not found.')
     }
-
-    const zone = await prisma.geofenceZone.update({
-      where: { id: req.params.id },
-      data: validation.data,
-    })
 
     return res.status(200).json({
       success: true,
-      message: 'Geofence zone updated successfully',
-      zone,
+      message: 'Geofence zone updated successfully.',
+      zone: result.zone,
     })
   } catch (error) {
     console.error('Geofence update failed:', error.message)
 
-    return res.status(500).json({
-      success: false,
-      message: 'Unable to update geofence zone',
-    })
+    if (error?.code === 'P2025') {
+      return sendError(res, 404, 'Geofence zone not found.')
+    }
+
+    return sendError(res, 500, 'Unable to update geofence zone.')
   }
 })
 
 router.patch('/:id/status', async (req, res) => {
+  const idValidation = idSchema.safeParse(req.params.id)
+
+  if (!idValidation.success) {
+    return sendError(res, 400, 'Invalid geofence ID.')
+  }
+
+  const validation = statusSchema.safeParse(req.body)
+
+  if (!validation.success) {
+    return sendError(res, 400, 'A valid isActive value is required.')
+  }
+
   try {
-    const idValidation = z.string().uuid().safeParse(req.params.id)
-
-    if (!idValidation.success) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid geofence ID',
+    const result = await prisma.$transaction(async (tx) => {
+      const existingZone = await tx.geofenceZone.findUnique({
+        where: { id: idValidation.data },
       })
-    }
 
-    const validation = statusSchema.safeParse(req.body)
+      if (!existingZone) {
+        return { notFound: true }
+      }
 
-    if (!validation.success) {
-      return res.status(400).json({
-        success: false,
-        message: 'A valid isActive value is required',
+      const zone = await tx.geofenceZone.update({
+        where: { id: idValidation.data },
+        data: validation.data,
       })
-    }
 
-    const existingZone = await prisma.geofenceZone.findUnique({
-      where: { id: req.params.id },
+      await writeGeofenceAudit(
+        tx,
+        req,
+        zone.isActive
+          ? 'GEOFENCE_ZONE_ENABLED'
+          : 'GEOFENCE_ZONE_DISABLED',
+        zone,
+        {
+          previousIsActive: existingZone.isActive,
+        }
+      )
+
+      return { zone }
     })
 
-    if (!existingZone) {
-      return res.status(404).json({
-        success: false,
-        message: 'Geofence zone not found',
-      })
+    if (result.notFound) {
+      return sendError(res, 404, 'Geofence zone not found.')
     }
-
-    const zone = await prisma.geofenceZone.update({
-      where: { id: req.params.id },
-      data: validation.data,
-    })
 
     return res.status(200).json({
       success: true,
-      message: zone.isActive
-        ? 'Geofence zone enabled successfully'
-        : 'Geofence zone disabled successfully',
-      zone,
+      message: result.zone.isActive
+        ? 'Geofence zone enabled successfully.'
+        : 'Geofence zone disabled successfully.',
+      zone: result.zone,
     })
   } catch (error) {
     console.error('Geofence status update failed:', error.message)
 
-    return res.status(500).json({
-      success: false,
-      message: 'Unable to update geofence status',
-    })
+    if (error?.code === 'P2025') {
+      return sendError(res, 404, 'Geofence zone not found.')
+    }
+
+    return sendError(res, 500, 'Unable to update geofence status.')
   }
 })
 
 router.delete('/:id', async (req, res) => {
+  const idValidation = idSchema.safeParse(req.params.id)
+
+  if (!idValidation.success) {
+    return sendError(res, 400, 'Invalid geofence ID.')
+  }
+
   try {
-    const idValidation = z.string().uuid().safeParse(req.params.id)
-
-    if (!idValidation.success) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid geofence ID',
+    const result = await prisma.$transaction(async (tx) => {
+      const existingZone = await tx.geofenceZone.findUnique({
+        where: { id: idValidation.data },
       })
-    }
 
-    const existingZone = await prisma.geofenceZone.findUnique({
-      where: { id: req.params.id },
+      if (!existingZone) {
+        return { notFound: true }
+      }
+
+      const activeSessions = await tx.attendanceSession.count({
+        where: { status: 'ACTIVE' },
+      })
+
+      if (activeSessions > 0) {
+        return { activeSessions: true }
+      }
+
+      await writeGeofenceAudit(
+        tx,
+        req,
+        'GEOFENCE_ZONE_DELETED',
+        existingZone
+      )
+
+      await tx.geofenceZone.delete({
+        where: { id: idValidation.data },
+      })
+
+      return { deleted: true }
     })
 
-    if (!existingZone) {
-      return res.status(404).json({
-        success: false,
-        message: 'Geofence zone not found',
-      })
+    if (result.notFound) {
+      return sendError(res, 404, 'Geofence zone not found.')
     }
 
-    const activeSessions = await prisma.attendanceSession.count({
-      where: { status: 'ACTIVE' },
-    })
-
-    if (activeSessions > 0) {
-      return res.status(409).json({
-        success: false,
-        message:
-          'Geofence zones cannot be permanently deleted while attendance sessions are active. Disable the zone instead.',
-      })
+    if (result.activeSessions) {
+      return sendError(
+        res,
+        409,
+        'Geofence zones cannot be permanently deleted while attendance sessions are active. Disable the zone instead.'
+      )
     }
-
-    await prisma.geofenceZone.delete({
-      where: { id: req.params.id },
-    })
 
     return res.status(200).json({
       success: true,
-      message: 'Geofence zone deleted successfully',
+      message: 'Geofence zone deleted successfully.',
     })
   } catch (error) {
     console.error('Geofence deletion failed:', error.message)
 
-    return res.status(500).json({
-      success: false,
-      message: 'Unable to delete geofence zone',
-    })
+    if (error?.code === 'P2025') {
+      return sendError(res, 404, 'Geofence zone not found.')
+    }
+
+    return sendError(res, 500, 'Unable to delete geofence zone.')
   }
 })
 

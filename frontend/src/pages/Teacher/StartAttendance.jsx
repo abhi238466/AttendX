@@ -1,3 +1,4 @@
+
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -12,7 +13,11 @@ import {
 } from 'lucide-react'
 import './StartAttendance.css'
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL ||
+  import.meta.env.VITE_API_URL ||
+  ''
+).replace(/\/$/, '')
 
 function getTodayDate() {
   const now = new Date()
@@ -23,8 +28,65 @@ function getTodayDate() {
   return localDate.toISOString().slice(0, 10)
 }
 
+function getRequestError(status, serverMessage) {
+  const message = String(serverMessage || '').toLowerCase()
+
+  if (status === 401) {
+    return 'Your teacher login has expired. Please log in again and retry.'
+  }
+
+  if (status === 403) {
+    return 'You are not authorized to create an attendance session. Please check your teacher account.'
+  }
+
+  if (status === 404) {
+    return 'The attendance service could not be found. Please refresh the page or contact the administrator.'
+  }
+
+  if (status === 409) {
+    return 'This session conflicts with an existing attendance session or schedule. Please check the class details and try again.'
+  }
+
+  if (status === 422 || status === 400) {
+    if (message.includes('section')) {
+      return 'The section details are invalid. Please check the section names and try again.'
+    }
+
+    if (message.includes('time') || message.includes('date')) {
+      return 'The selected class date or timing is invalid. Please check the schedule and try again.'
+    }
+
+    if (message.includes('duration')) {
+      return 'The attendance duration is invalid. Please select a valid duration.'
+    }
+
+    return 'Some class details were rejected by the server. Please review the form and try again.'
+  }
+
+  if (status === 429) {
+    return 'Too many requests. Please wait a moment before creating the session again.'
+  }
+
+  if (status >= 500) {
+    return 'The server is temporarily unavailable. Your session could not be confirmed. Please try again shortly.'
+  }
+
+  return serverMessage || 'The attendance session could not be created. Please try again.'
+}
+
+function FieldError({ message }) {
+  if (!message) return null
+
+  return (
+    <p className="td-form-error" role="alert">
+      {message}
+    </p>
+  )
+}
+
 function StartAttendance({ onBack }) {
   const navigate = useNavigate()
+
   const [course, setCourse] = useState('')
   const [subject, setSubject] = useState('')
   const [className, setClassName] = useState('')
@@ -35,12 +97,27 @@ function StartAttendance({ onBack }) {
   const [classEndTime, setClassEndTime] = useState('')
   const [durationMinutes, setDurationMinutes] = useState('5')
   const [error, setError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState({})
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const clearFieldError = (field) => {
+    setFieldErrors((current) => ({
+      ...current,
+      [field]: '',
+    }))
+    setError('')
+  }
 
   const updateSection = (index, value) => {
     setSections((current) =>
       current.map((section, i) => (i === index ? value : section))
     )
+
+    setFieldErrors((current) => ({
+      ...current,
+      sections: '',
+    }))
+    setError('')
   }
 
   const addSection = () => {
@@ -51,11 +128,84 @@ function StartAttendance({ onBack }) {
 
   const removeSection = (index) => {
     setSections((current) => current.filter((_, i) => i !== index))
+
+    setFieldErrors((current) => ({
+      ...current,
+      sections: '',
+    }))
+    setError('')
+  }
+
+  const validateForm = () => {
+    const errors = {}
+
+    if (!course.trim()) {
+      errors.course = 'Please enter the course name.'
+    }
+
+    if (!subject.trim()) {
+      errors.subject = 'Please enter the subject name.'
+    }
+
+    const enteredSections = sections
+      .map((section) => section.trim())
+      .filter(Boolean)
+
+    if (enteredSections.length === 0) {
+      errors.sections = 'Please enter at least one section.'
+    } else {
+      const normalizedSections = enteredSections.map((section) =>
+        section.toLowerCase()
+      )
+
+      if (new Set(normalizedSections).size !== normalizedSections.length) {
+        errors.sections = 'Duplicate section names found. Each section must be unique.'
+      }
+    }
+
+    if (!date) {
+      errors.date = 'Please select the class date.'
+    } else if (date < getTodayDate()) {
+      errors.date = 'Past dates cannot be selected. Please choose today or a future date.'
+    }
+
+    if (!classStartTime) {
+      errors.classStartTime = 'Please select the class start time.'
+    }
+
+    if (!classEndTime) {
+      errors.classEndTime = 'Please select the class end time.'
+    }
+
+    if (
+      date &&
+      classStartTime &&
+      classEndTime &&
+      !errors.date &&
+      classEndTime <= classStartTime
+    ) {
+      errors.classEndTime = 'End time must be later than the start time.'
+    }
+
+    setFieldErrors(errors)
+
+    return Object.keys(errors).length === 0
   }
 
   const handleContinue = async (event) => {
     event.preventDefault()
+
+    if (isSubmitting) return
+
     setError('')
+
+    if (!validateForm()) {
+      const firstError = document.querySelector('[aria-invalid="true"]')
+
+      firstError?.focus()
+
+      return
+    }
 
     const selectedSections = [
       ...new Set(
@@ -65,30 +215,6 @@ function StartAttendance({ onBack }) {
       ),
     ]
 
-    const enteredSections = sections.filter((section) =>
-      section.trim()
-    )
-
-    if (!course.trim() || !subject.trim()) {
-      setError('Please enter both the course and subject.')
-      return
-    }
-
-    if (selectedSections.length === 0) {
-      setError('Please enter at least one section.')
-      return
-    }
-
-    if (selectedSections.length !== enteredSections.length) {
-      setError('Section names must be unique.')
-      return
-    }
-
-    if (!date || !classStartTime || !classEndTime) {
-      setError('Please select the class date, start time and end time.')
-      return
-    }
-
     const classStart = new Date(`${date}T${classStartTime}`)
     const classEnd = new Date(`${date}T${classEndTime}`)
 
@@ -97,7 +223,9 @@ function StartAttendance({ onBack }) {
       Number.isNaN(classEnd.getTime()) ||
       classEnd <= classStart
     ) {
-      setError('Class end time must be later than class start time.')
+      setFieldErrors({
+        classEndTime: 'Please select a valid end time later than the start time.',
+      })
       return
     }
 
@@ -130,7 +258,10 @@ function StartAttendance({ onBack }) {
 
       if (!response.ok || result.success === false) {
         throw new Error(
-          result.error || result.message || 'Could not create the attendance session.'
+          getRequestError(
+            response.status,
+            result.message || result.error
+          )
         )
       }
 
@@ -138,16 +269,24 @@ function StartAttendance({ onBack }) {
 
       if (!createdSessionId) {
         throw new Error(
-          'The session was created, but the server did not return a session ID.'
+          'The server did not return the new session ID. Please check your attendance sessions before trying again.'
         )
       }
 
-      navigate(`/teacher/live-attendance/${encodeURIComponent(createdSessionId)}`)
-    } catch (requestError) {
-      setError(
-        requestError.message ||
-          'Unable to connect to the server. Check your connection and try again.'
+      navigate(
+        `/teacher/live-attendance/${encodeURIComponent(createdSessionId)}`
       )
+    } catch (requestError) {
+      if (requestError instanceof TypeError) {
+        setError(
+          'Unable to connect to the server. Please check your internet connection and try again.'
+        )
+      } else {
+        setError(
+          requestError.message ||
+          'The attendance session could not be created. Please try again.'
+        )
+      }
     } finally {
       setIsSubmitting(false)
     }
@@ -177,11 +316,13 @@ function StartAttendance({ onBack }) {
         <h2>Session Details</h2>
         <p className="td-form-description">
           Enter class details, select sections and configure attendance.
+          Fields marked Optional can be left blank.
         </p>
 
         <form
           onSubmit={handleContinue}
           className="td-attendance-form"
+          noValidate
         >
           <div className="td-form-group">
             <label htmlFor="attendance-course">
@@ -191,11 +332,21 @@ function StartAttendance({ onBack }) {
               id="attendance-course"
               type="text"
               value={course}
-              onChange={(event) => setCourse(event.target.value)}
+              onChange={(event) => {
+                setCourse(event.target.value)
+                clearFieldError('course')
+              }}
               placeholder="e.g. MCA"
               maxLength={150}
               required
+              aria-invalid={Boolean(fieldErrors.course)}
+              aria-describedby={fieldErrors.course ? 'course-error' : undefined}
             />
+            {fieldErrors.course && (
+              <p id="course-error" className="td-form-error" role="alert">
+                {fieldErrors.course}
+              </p>
+            )}
           </div>
 
           <div className="td-form-group">
@@ -204,11 +355,21 @@ function StartAttendance({ onBack }) {
               id="attendance-subject"
               type="text"
               value={subject}
-              onChange={(event) => setSubject(event.target.value)}
+              onChange={(event) => {
+                setSubject(event.target.value)
+                clearFieldError('subject')
+              }}
               placeholder="e.g. DevOps on Cloud"
               maxLength={150}
               required
+              aria-invalid={Boolean(fieldErrors.subject)}
+              aria-describedby={fieldErrors.subject ? 'subject-error' : undefined}
             />
+            {fieldErrors.subject && (
+              <p id="subject-error" className="td-form-error" role="alert">
+                {fieldErrors.subject}
+              </p>
+            )}
           </div>
 
           <div className="td-form-group">
@@ -245,6 +406,7 @@ function StartAttendance({ onBack }) {
             </label>
             <p className="td-form-help">
               Add every section attending this class, such as G1, A1 or A2.
+              At least one section is required.
             </p>
 
             <div className="td-section-input-list">
@@ -260,6 +422,7 @@ function StartAttendance({ onBack }) {
                     placeholder={`Section ${index + 1}, e.g. G1`}
                     maxLength={50}
                     required={index === 0}
+                    aria-invalid={Boolean(fieldErrors.sections)}
                   />
 
                   {sections.length > 1 && (
@@ -276,6 +439,12 @@ function StartAttendance({ onBack }) {
               ))}
             </div>
 
+            {fieldErrors.sections && (
+              <p className="td-form-error" role="alert">
+                {fieldErrors.sections}
+              </p>
+            )}
+
             <button
               type="button"
               className="td-add-section-btn"
@@ -285,6 +454,12 @@ function StartAttendance({ onBack }) {
               <Plus size={16} />
               Add another section
             </button>
+
+            {sections.length >= 20 && (
+              <p className="td-form-help">
+                Maximum 20 sections are allowed.
+              </p>
+            )}
           </div>
 
           <div className="td-form-group">
@@ -296,9 +471,18 @@ function StartAttendance({ onBack }) {
               type="date"
               value={date}
               min={getTodayDate()}
-              onChange={(event) => setDate(event.target.value)}
+              onChange={(event) => {
+                setDate(event.target.value)
+                clearFieldError('date')
+              }}
               required
+              aria-invalid={Boolean(fieldErrors.date)}
             />
+            {fieldErrors.date && (
+              <p className="td-form-error" role="alert">
+                {fieldErrors.date}
+              </p>
+            )}
           </div>
 
           <div className="td-form-group">
@@ -331,9 +515,19 @@ function StartAttendance({ onBack }) {
               id="class-start-time"
               type="time"
               value={classStartTime}
-              onChange={(event) => setClassStartTime(event.target.value)}
+              onChange={(event) => {
+                setClassStartTime(event.target.value)
+                clearFieldError('classStartTime')
+                clearFieldError('classEndTime')
+              }}
               required
+              aria-invalid={Boolean(fieldErrors.classStartTime)}
             />
+            {fieldErrors.classStartTime && (
+              <p className="td-form-error" role="alert">
+                {fieldErrors.classStartTime}
+              </p>
+            )}
           </div>
 
           <div className="td-form-group">
@@ -342,9 +536,18 @@ function StartAttendance({ onBack }) {
               id="class-end-time"
               type="time"
               value={classEndTime}
-              onChange={(event) => setClassEndTime(event.target.value)}
+              onChange={(event) => {
+                setClassEndTime(event.target.value)
+                clearFieldError('classEndTime')
+              }}
               required
+              aria-invalid={Boolean(fieldErrors.classEndTime)}
             />
+            {fieldErrors.classEndTime && (
+              <p className="td-form-error" role="alert">
+                {fieldErrors.classEndTime}
+              </p>
+            )}
           </div>
 
           {error && (

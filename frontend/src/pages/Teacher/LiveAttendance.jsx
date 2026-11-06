@@ -20,16 +20,52 @@ const API_BASE_URL = (
 ).replace(/\/$/, '')
 const TOKEN_REFRESH_SECONDS = 50
 
-async function readResponse(response) {
-const result = await response.json().catch(() => ({}))
+function getRequestErrorMessage(status, result = {}) {
+  const serverMessage =
+    typeof result.message === 'string' && result.message.trim()
+      ? result.message.trim()
+      : typeof result.error === 'string' && result.error.trim()
+        ? result.error.trim()
+        : ''
 
-if (!response.ok) {
-throw new Error(
-result.message || result.error || 'The request could not be completed.'
-)
+  if (serverMessage) return serverMessage
+
+  const messages = {
+    400: 'The request contains invalid or incomplete data. Please check the session details and try again.',
+    401: 'Your teacher login session has expired. Please log in again.',
+    403: 'You do not have permission to manage this attendance session.',
+    404: 'The attendance session or requested resource was not found. It may have been removed or may not belong to your account.',
+    409: 'This session has changed or is no longer in the required state. Refresh the page and try again.',
+    422: 'The server could not process this request because some details are invalid.',
+    429: 'Too many requests were sent in a short time. Please wait a moment and try again.',
+    500: 'The server encountered an internal error while processing this request. Please try again.',
+    502: 'The attendance server is temporarily unavailable. Please try again shortly.',
+    503: 'The attendance service is temporarily unavailable. Please try again shortly.',
+    504: 'The attendance server took too long to respond. Please try again.'
+  }
+
+  return messages[status] || `The request failed (HTTP ${status}). Please try again or contact the administrator if the issue continues.`
 }
 
-return result
+async function readResponse(response) {
+  const result = await response.json().catch(() => ({}))
+
+  if (!response.ok) {
+    const error = new Error(getRequestErrorMessage(response.status, result))
+    error.status = response.status
+    error.code = result.code || result.errorCode || null
+    throw error
+  }
+
+  return result
+}
+
+function getDisplayError(error, fallback) {
+  if (error instanceof TypeError) {
+    return 'Unable to connect to the attendance server. Check your internet connection and try again.'
+  }
+
+  return error?.message || fallback
 }
 
 function formatDateTime(value) {
@@ -150,11 +186,18 @@ try {
 
   if (manual) setNotice('QR code and text code refreshed.')
 } catch (requestError) {
-  setError(requestError.message || 'Could not refresh the attendance code.')
+  setTokenData(null)
+  setSecondsLeft(0)
+  setError(
+    `${getDisplayError(requestError, 'Could not refresh the attendance code.')} The current code cannot be confirmed as usable. Please refresh again before students scan or enter a code.`
+  )
 
   if (
+    requestError.status === 404 ||
+    requestError.status === 409 ||
     requestError.message?.toLowerCase().includes('ended') ||
-    requestError.message?.toLowerCase().includes('not active')
+    requestError.message?.toLowerCase().includes('not active') ||
+    requestError.message?.toLowerCase().includes('closed')
   ) {
     setClosed(true)
   }
@@ -180,7 +223,7 @@ async function initialize() {
     }
   } catch (requestError) {
     if (!cancelled) {
-      setError(requestError.message || 'Could not load this session.')
+      setError(getDisplayError(requestError, 'Could not load this attendance session.'))
     }
   } finally {
     if (!cancelled) setLoading(false)
@@ -269,7 +312,7 @@ try {
   setSymbolSecondsLeft(0)
   setNotice(auto ? 'Session time ended. Attendance session closed automatically.' : 'Attendance session closed successfully.')
 } catch (requestError) {
-  setError(requestError.message || 'Could not close this session.')
+  setError(getDisplayError(requestError, 'Could not close this attendance session.'))
 } finally {
   setClosing(false)
 }
@@ -332,9 +375,9 @@ async function handleGenerateSymbolChallenge() {
     )
 
     setSymbolChallenge(result.symbolChallenge)
-    setNotice('New symbol challenge generated. Students will receive this latest challenge.')
+    setNotice('New symbol challenge generated for this session.')
   } catch (requestError) {
-    setError(requestError.message || 'Could not generate the symbol challenge.')
+    setError(getDisplayError(requestError, 'Could not generate the symbol challenge.'))
   } finally {
     setGeneratingSymbol(false)
   }
@@ -460,7 +503,7 @@ Back to Dashboard
             <div className="la-qr-placeholder">
               <QrCode size={42} />
               <span>
-                {closed ? 'This session is closed' : 'QR code unavailable'}
+                {closed ? 'This session is closed' : refreshing ? 'Generating a new QR code...' : 'QR code unavailable. Refresh the code to try again.'}
               </span>
             </div>
           )}
@@ -490,7 +533,7 @@ Back to Dashboard
 
         <p className="la-security-note">
           <ShieldCheck size={16} />
-          Previous codes are revoked when a new code is generated.
+          Use only the QR code or text code currently displayed. A replaced code cannot start a new verification.
         </p>
 
         <a
@@ -529,12 +572,14 @@ Back to Dashboard
         <div className="la-code-panel">
           <span className="la-code-label">CURRENT TEXT CODE</span>
           <strong className="la-code-value">
-            {closed ? 'CLOSED' : tokenData?.textCode || '—'}
+            {closed ? 'CLOSED' : tokenData?.textCode || (refreshing ? 'LOADING' : 'UNAVAILABLE')}
           </strong>
           <span className="la-code-hint">
             {closed
               ? 'This code can no longer be used.'
-              : `Expires ${formatDateTime(tokenData?.expiresAt)}`}
+               : tokenData?.expiresAt
+                ? `Expires ${formatDateTime(tokenData.expiresAt)}`
+                : 'A valid text code is not currently available.'}
           </span>
         </div>
 
