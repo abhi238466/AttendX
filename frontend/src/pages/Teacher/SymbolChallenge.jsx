@@ -1,4 +1,3 @@
-
 import { Clock3, RefreshCw, ShieldCheck } from 'lucide-react'
 import './SymbolChallenge.css'
 
@@ -21,7 +20,7 @@ export default function SymbolChallenge({
     ? Math.max(0, Math.min(25, Number(secondsLeft)))
     : 0
 
-  const progressWidth = `${(remainingSeconds / 25) * 100}%`
+  const progressPercent = (remainingSeconds / 25) * 100
 
   const isExpired = Boolean(challenge) && remainingSeconds <= 0
   const hasSymbols = symbols.length > 0
@@ -69,12 +68,22 @@ export default function SymbolChallenge({
             </strong>
           </div>
 
-          <div className="la-progress-track" aria-hidden="true">
-            <div
-              className="la-progress-value"
-              style={{ width: progressWidth }}
+          <svg
+            className="la-progress-track"
+            width="100%"
+            height="5"
+            viewBox="0 0 100 5"
+            preserveAspectRatio="none"
+            aria-hidden="true"
+          >
+            <rect
+              x="0"
+              y="0"
+              width={progressPercent}
+              height="5"
+              fill="var(--la-purple)"
             />
-          </div>
+          </svg>
 
           <div className="la-symbol-grid-wrap">
             <p className="la-code-label">GENERATED SYMBOL GRID</p>

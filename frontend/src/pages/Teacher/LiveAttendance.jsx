@@ -465,7 +465,7 @@ Back to Dashboard
           </span>
           <span className="la-session-end-time">
             <Clock3 size={15} />
-            <span style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+            <span className="la-session-end-details">
               <span>Ends {formatDateTime(session.endsAt)}</span>
               <strong className={sessionSecondsLeft <= 60 ? 'is-expiring' : ''}>
                 {closed ? 'Session ended' : `${formatRemainingTime(sessionSecondsLeft)} remaining`}
@@ -523,12 +523,18 @@ Back to Dashboard
         </div>
 
         <div className="la-progress-track" aria-hidden="true">
-          <div
+          <svg
             className="la-progress-value"
-            style={{
-              width: `${closed ? 0 : Math.min(100, (secondsLeft / TOKEN_REFRESH_SECONDS) * 100)}%`,
-            }}
-          />
+            viewBox="0 0 100 100"
+            preserveAspectRatio="none"
+          >
+            <rect
+              x="0"
+              y="0"
+              width={closed ? 0 : Math.min(100, (secondsLeft / TOKEN_REFRESH_SECONDS) * 100)}
+              height="100"
+            />
+          </svg>
         </div>
 
         <p className="la-security-note">
@@ -595,12 +601,18 @@ Back to Dashboard
           )}
         </div>
         <div className="la-progress-track" aria-hidden="true">
-          <div
+          <svg
             className="la-progress-value"
-            style={{
-              width: `${closed ? 0 : Math.min(100, (secondsLeft / TOKEN_REFRESH_SECONDS) * 100)}%`,
-            }}
-          />
+            viewBox="0 0 100 100"
+            preserveAspectRatio="none"
+          >
+            <rect
+              x="0"
+              y="0"
+              width={closed ? 0 : Math.min(100, (secondsLeft / TOKEN_REFRESH_SECONDS) * 100)}
+              height="100"
+            />
+          </svg>
         </div>
 
         <button

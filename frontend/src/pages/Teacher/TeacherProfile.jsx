@@ -1,3 +1,4 @@
+
 import { useEffect, useRef, useState } from 'react'
 import './TeacherProfile.css'
 
@@ -25,6 +26,7 @@ export default function TeacherProfile({ teacher: initialTeacher, onBack }) {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const [photoLoadFailed, setPhotoLoadFailed] = useState(false)
   const fileInputRef = useRef(null)
 
   useEffect(() => {
@@ -50,6 +52,7 @@ export default function TeacherProfile({ teacher: initialTeacher, onBack }) {
 
         if (!cancelled) {
           setTeacher(profile)
+          setPhotoLoadFailed(false)
         }
       } catch (err) {
         if (!cancelled) {
@@ -127,6 +130,7 @@ export default function TeacherProfile({ teacher: initialTeacher, onBack }) {
         updatedTeacher = profileData.teacher || profileData
       }
 
+      setPhotoLoadFailed(false)
       setTeacher((current) => ({ ...current, ...updatedTeacher }))
       setMessage('Profile photo updated successfully.')
     } catch (err) {
@@ -190,13 +194,13 @@ export default function TeacherProfile({ teacher: initialTeacher, onBack }) {
 
         <div className="teacher-profile-photo-section">
           <div className="teacher-profile-avatar">
-            {photoUrl ? (
+            {photoUrl && !photoLoadFailed ? (
               <img
                 key={photoUrl}
                 src={photoUrl}
                 alt={`${currentName} profile`}
-                onError={(event) => {
-                  event.currentTarget.style.display = 'none'
+                onError={() => {
+                  setPhotoLoadFailed(true)
                 }}
               />
             ) : (

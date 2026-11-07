@@ -1042,3 +1042,24 @@ transition-duration: .01ms !important;
     font-size: 12px;
   }
 }
+
+/* CSP-safe replacements for the removed inline styles */
+.la-session-end-time > .la-session-end-details {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.la-progress-value {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  background: transparent;
+}
+
+.la-progress-value rect {
+  fill: var(--la-purple);
+  transition: width .25s linear;
+}
