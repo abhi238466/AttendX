@@ -139,72 +139,72 @@ function getLocationFeedback(message, status = 0) {
   if (status === 403 || normalized.includes('outside the permitted campus') || normalized.includes('outside the campus')) {
     return {
       type: 'error',
-      title: 'Aap campus ke permitted area ke bahar hain',
-      message: 'Attendance ke liye active campus area ke andar hona zaroori hai. Campus ke andar aakar current location dobara verify karein.',
+      title: 'You are outside the permitted campus area.',
+      message: 'You must be within an active campus area to mark attendance. Please enter the campus and verify your current location again.',
     }
   }
 
   if (normalized.includes('accuracy') || normalized.includes('precise location')) {
     return {
       type: 'warning',
-      title: 'GPS accuracy sufficient nahi hai',
-      message: 'Phone settings mein Location aur Precise Location ON karein. GPS signal behtar hone ke liye open area mein jaakar location dobara capture karein.',
+      title: 'GPS accuracy is insufficient.',
+      message: 'Enable Location and Precise Location in your phone settings. Move to an open area for a better GPS signal, then capture your location again.',
     }
   }
 
   if (normalized.includes('permission') || normalized.includes('denied') || normalized.includes('allow location')) {
     return {
       type: 'error',
-      title: 'Location permission nahi mili',
-      message: 'Browser ya phone settings mein AttendX ke liye Location permission allow karein. Permission allow karne ke baad dobara try karein.',
+      title: 'Location permission was not granted.',
+      message: 'Allow location permission for AttendX in your browser or phone settings, then try again.',
     }
   }
 
   if (normalized.includes('timed out') || normalized.includes('timeout')) {
     return {
       type: 'warning',
-      title: 'Location request ka time khatam ho gaya',
-      message: 'GPS se samay par location nahi mili. Location ON rakhein, thodi der rukkar dobara try karein.',
+      title: 'The location request timed out.',
+      message: 'Your location could not be retrieved in time. Keep Location enabled, wait a few moments, and try again.',
     }
   }
 
   if (status === 503 || normalized.includes('campus location verification is currently unavailable') || normalized.includes('no active geofence')) {
     return {
       type: 'system',
-      title: 'Campus verification service unavailable hai',
-      message: 'Active campus geofence configuration nahi mil rahi ya service temporarily unavailable hai. Ye system-side issue ho sakta hai; administrator ko inform karein.',
+      title: 'Campus verification service is unavailable.',
+      message: 'No active campus geofence configuration was found, or the service is temporarily unavailable. This may be a system-side issue. Please inform the administrator.',
     }
   }
 
   if (normalized.includes('could not be determined') || normalized.includes('unavailable') || normalized.includes('position unavailable')) {
     return {
       type: 'warning',
-      title: 'Phone ki location detect nahi ho pa rahi',
-      message: 'GPS signal unavailable hai. Location ON karein aur open area ya window ke paas jaakar dobara try karein.',
+      title: 'Your phone location could not be detected.',
+      message: 'The GPS signal is unavailable. Enable Location and try again in an open area or near a window.',
     }
   }
 
   if (normalized.includes('too old') || normalized.includes('stale') || normalized.includes('timestamp')) {
     return {
       type: 'warning',
-      title: 'Location reading purani ya invalid hai',
-      message: 'AttendX ko fresh location reading nahi mili. Refresh Location karke dobara verification karein.',
+      title: 'The location reading is outdated or invalid.',
+      message: 'AttendX did not receive a fresh location reading. Refresh your location and try the verification again.',
     }
   }
 
   if (status === 429) {
     return {
       type: 'warning',
-      title: 'Bahut saari requests bheji gayi hain',
-      message: 'Thodi der wait karke dobara try karein. Baar-baar button press na karein.',
+      title: 'Too many requests have been sent.',
+      message: 'Please wait a moment before trying again. Avoid pressing the button repeatedly.',
     }
   }
 
   if (/location|campus|gps|geofence|permission|accuracy/i.test(normalized)) {
     return {
       type: 'error',
-      title: 'Location verification complete nahi hui',
-      message: message || 'Location verify nahi ho paayi. Dobara location capture karke try karein.',
+      title: 'Location verification could not be completed.',
+      message: message || 'Your location could not be verified. Capture your location again and retry.',
     }
   }
 
@@ -668,12 +668,12 @@ export default function StudentAttendance() {
     symbolChallengeRequestPendingRef.current = true
     setBusy(true)
     setLocationFeedback(null)
-    setLocationMessage('Phone se current GPS location li ja rahi hai…')
+    setLocationMessage('Retrieving your current GPS location…')
 
     try {
       const currentLocation = await getCurrentLocation()
       if (currentLocation.locationAccuracyMeters > MAX_LOCATION_ACCURACY_METERS) {
-        const accuracyError = `GPS accuracy ±${Math.round(currentLocation.locationAccuracyMeters)}m hai. Maximum allowed accuracy 100m hai.`
+        const accuracyError = `GPS accuracy is ±${Math.round(currentLocation.locationAccuracyMeters)}m. The maximum allowed accuracy is 100m.`
         setLocationFeedback(getLocationFeedback(accuracyError))
         throw new Error(accuracyError)
       }
@@ -788,7 +788,7 @@ export default function StudentAttendance() {
           ? cachedLocation
           : await getCurrentLocation()
       if (freshLocation.locationAccuracyMeters > MAX_LOCATION_ACCURACY_METERS) {
-        const accuracyError = `GPS accuracy ±${Math.round(freshLocation.locationAccuracyMeters)}m hai. Maximum allowed accuracy 100m hai.`
+        const accuracyError = `GPS accuracy is ±${Math.round(freshLocation.locationAccuracyMeters)}m. The maximum allowed accuracy is 100m.`
         setLocationFeedback(getLocationFeedback(accuracyError))
         throw new Error(accuracyError)
       }
@@ -1041,7 +1041,7 @@ export default function StudentAttendance() {
                       }}
                       disabled={busy}
                     >
-                      Dobara location verify karein
+                      Verify Location Again
                     </button>
                   </div>
                 )}
@@ -1142,10 +1142,10 @@ export default function StudentAttendance() {
                     setLocationFeedback(null)
                     setError('')
                     try {
-                      setLocationMessage('Fresh GPS location capture ki ja rahi hai…')
+                      setLocationMessage('Capturing a fresh GPS location…')
                       const reading = await getCurrentLocation()
                       if (reading.locationAccuracyMeters > MAX_LOCATION_ACCURACY_METERS) {
-                        throw new Error(`GPS accuracy ±${Math.round(reading.locationAccuracyMeters)}m hai. Maximum allowed accuracy 100m hai.`)
+                        throw new Error(`GPS accuracy is ±${Math.round(reading.locationAccuracyMeters)}m. The maximum allowed accuracy is 100m.`)
                       }
                       symbolLocationRef.current = reading
                       setLocationMessage('')
@@ -1153,12 +1153,12 @@ export default function StudentAttendance() {
                     } catch (retryError) {
                       setLocationMessage('')
                       setLocationFeedback(getLocationFeedback(retryError.message))
-                      setError(retryError.message || 'Location dobara capture nahi ho paayi.')
+                      setError(retryError.message || 'The location could not be captured again.')
                     }
                   }}
                   disabled={busy}
                 >
-                  Dobara location capture karke submit karein
+                  Capture Location Again and Submit
                 </button>
               </div>
             )}
